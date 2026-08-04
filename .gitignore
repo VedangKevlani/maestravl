@@ -49,6 +49,8 @@ next-env.d.ts
 # database & uploaded document storage (never committed)
 /dev.db
 /dev.db-journal
+/prisma/dev.db
+/prisma/dev.db-journal
 /storage/
 e2e/output/
 e2e/fixtures/*.png
