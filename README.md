@@ -1,22 +1,52 @@
 # Ripple — The Autonomous Coordination Platform for Tourism
 
-A cinematic, scroll-driven marketing website for Ripple, built for Awwwards-level quality.
+A cinematic, scroll-driven marketing site (`/`) plus a working **Travel
+Intelligence Engine** (`/dashboard`, `/trips/*`) — itinerary upload, OCR +
+rule-based extraction, a confidence-scored review/edit UI, and a pluggable
+monitoring architecture. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+for how the engine is built and [`docs/INTEGRATION.md`](docs/INTEGRATION.md)
+for connecting real monitoring providers later.
 
 ## Tech Stack
 
+**Marketing site**
 - **Next.js 15** (App Router, TypeScript)
 - **Tailwind CSS** — utility styling
 - **Framer Motion** — scroll-driven animations, transitions
 - **@studio-freight/lenis** — premium smooth scrolling
-- **Lucide React** — icons
+
+**Travel Intelligence Engine**
+- **Prisma 5 + SQLite** — persistence, zero hosted-service cost
+- **Auth.js (NextAuth v5)** — credentials auth, JWT sessions
+- **pdfjs-dist** + **tesseract.js** — layered text extraction (native PDF
+  text, OCR fallback) — both free/open-source, no external API calls
+- **chrono-node** — natural-language date/time parsing
+- **@dnd-kit** — touch-friendly drag-and-drop timeline reordering
+- **zod** — API input validation
+- **Vitest** — unit tests (`npm test`)
 
 ## Quick Start
 
 ```bash
 npm install
+cp .env.example .env   # or use the .env already in the repo for local dev
+npx prisma migrate dev # creates dev.db
 npm run dev
-# Open http://localhost:3000
+# Open http://localhost:3000 for the marketing site
+# Open http://localhost:3000/signup to try the Travel Intelligence Engine
 ```
+
+Required env vars (see `.env`): `DATABASE_URL`, `AUTH_SECRET`,
+`FILE_ENCRYPTION_KEY`, `DOCUMENT_STORAGE_DIR`. Generate secrets with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # AUTH_SECRET
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"      # FILE_ENCRYPTION_KEY
+```
+
+Run the unit test suite with `npm test`. Run a production build with
+`npm run build && npm run start` (the dev server's on-demand compilation can
+mask timing-sensitive issues that a real build won't have).
 
 ## Structure
 
@@ -41,6 +71,24 @@ app/
   page.tsx           — Scene orchestrator
 public/
   videos/            — sce1.mp4 through sce7.mp4 (scene footage)
+
+app/(app)/           — auth-gated routes: /dashboard, /trips/new, /trips/[id]
+app/login, app/signup
+app/api/
+  auth/              — Auth.js handler + custom signup endpoint
+  trips/, segments/  — trip/passenger/segment CRUD + reordering
+  upload/            — file upload → extraction → segment creation
+  documents/[id]/file/ — authenticated, decrypt-on-read document retrieval
+lib/
+  extraction/        — text extraction, rule-based parsing, normalization
+  monitoring/        — MonitoringAdapter interface + per-transport adapters
+  security/          — file validation, at-rest encryption
+  data/              — airport/airline code dictionaries
+  db.ts, auth.ts, constants.ts
+prisma/schema.prisma — Trip, Passenger, Segment, Document, MonitoringRecord
+docs/
+  ARCHITECTURE.md    — how the extraction/monitoring pipeline works
+  INTEGRATION.md      — connecting real monitoring providers, LLM parsing, etc.
 ```
 
 ## Deployment to Vercel
@@ -94,11 +142,16 @@ Scene mapping:
 
 ## Future Integrations
 
-The architecture is ready for:
-- **Auth** — add NextAuth.js at `app/api/auth/`
-- **Database** — Supabase client at `app/lib/supabase.ts`
-- **Realtime** — Supabase Realtime channels
+**Done:** Auth (Auth.js credentials + JWT), database (Prisma + SQLite) — see
+the Travel Intelligence Engine section above.
+
+Still ahead — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for specifics:
+- **Live monitoring** — flight/train/bus/ferry status providers (adapters
+  are stubbed and ready, just need an API key + the fetch call filled in)
+- **Realtime** — push status changes to the dashboard as monitoring checks land
 - **Operator Portal** — new route `app/operators/`
-- **Customer Portal** — new route `app/portal/`
 - **Payments** — Stripe at `app/api/checkout/`
 - **Analytics** — Vercel Analytics (zero config)
+- **Boarding pass QR / wallet export / calendar sync / email import** —
+  each attaches to the extraction pipeline's `raw bytes/text in →
+  ExtractedItinerary out` contract without touching the parser or schema

@@ -5,24 +5,41 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:e2e": "node e2e/manual-trip.mjs",
+    "test:e2e:upload": "node e2e/fixtures/make-test-itinerary.mjs && node e2e/upload.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@prisma/client": "^5.22.0",
     "@studio-freight/lenis": "^1.0.42",
+    "bcryptjs": "^3.0.3",
+    "canvas": "^3.2.3",
+    "chrono-node": "^2.10.1",
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
     "next": "^15",
+    "next-auth": "^5.0.0-beta.32",
+    "pdfjs-dist": "^6.2.108",
+    "prisma": "^5.22.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "playwright": "^1.62.1",
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

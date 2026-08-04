@@ -1,0 +1,154 @@
+// Ripple Travel Intelligence Engine — data model
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// NOTE: SQLite has no native enum type, so status/type fields below are
+// plain Strings holding one of a fixed set of values (documented alongside
+// each field). Validity is enforced in the API layer via zod, and the
+// canonical value lists live in lib/constants.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  trips Trip[]
+}
+
+model Trip {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title  String
+  /// UPCOMING | ACTIVE | COMPLETED | CANCELLED
+  status    String   @default("UPCOMING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passengers Passenger[]
+  segments   Segment[]
+  documents  Document[]
+}
+
+model Passenger {
+  id               String  @id @default(cuid())
+  tripId           String
+  trip             Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  name             String
+  isPrimary        Boolean @default(false)
+  email            String?
+  phone            String?
+  emergencyContact String?
+
+  segmentLinks SegmentPassenger[]
+}
+
+model Document {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId String
+
+  storedFilename   String // encrypted-at-rest filename on disk, never served publicly
+  originalFilename String
+  mimeType         String
+  fileSize         Int
+  /// PENDING | PROCESSING | COMPLETED | FAILED
+  status           String    @default("PENDING")
+  extractedRawText String?
+  extractionError  String?
+  uploadedAt       DateTime  @default(now())
+  processedAt      DateTime?
+
+  segments Segment[]
+}
+
+model Segment {
+  id               String    @id @default(cuid())
+  tripId           String
+  trip             Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  sourceDocument   Document? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  sourceDocumentId String?
+
+  order Int
+  /// FLIGHT | TRAIN | BUS | TAXI | FERRY | CRUISE | BOAT | HELICOPTER | BICYCLE | RENTAL_CAR | WALKING | HOTEL | RESTAURANT | EXCURSION | OTHER
+  transportType String
+  /// SCHEDULED | BOARDING | DEPARTED | DELAYED | CANCELLED | ARRIVED | COMPLETED
+  status String @default("SCHEDULED")
+
+  provider           String? // airline / train operator / hotel brand / restaurant name
+  identifier         String? // flight/train/bus number
+  confirmationNumber String?
+  ticketNumber       String?
+
+  departureLocation     String?
+  departureLocationCode String?
+  departureTerminal     String?
+  departureGate         String?
+  departureTime         DateTime?
+
+  arrivalLocation     String?
+  arrivalLocationCode String?
+  arrivalTerminal     String?
+  arrivalTime         DateTime?
+
+  timezone    String?
+  seat        String?
+  cabin       String?
+  travelClass String?
+  currency    String?
+  price       Float?
+  notes       String?
+  baggageInfo String?
+
+  // JSON map of fieldName -> confidence score (0-100), set at extraction time,
+  // cleared per-field once the user confirms/edits that field
+  confidenceScores String? // JSON-encoded Record<string, number>
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  passengerLinks SegmentPassenger[]
+  monitoring     MonitoringRecord?
+}
+
+model SegmentPassenger {
+  id           String    @id @default(cuid())
+  segmentId    String
+  segment      Segment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  passengerId  String
+  passenger    Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  seat         String?
+  ticketNumber String?
+
+  @@unique([segmentId, passengerId])
+}
+
+model MonitoringRecord {
+  id        String  @id @default(cuid())
+  segmentId String  @unique
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  apiProvider String? // which adapter/provider is responsible, e.g. "flight-adapter-v1"
+  trackingKey String? // provider-specific unique key for this segment
+  /// NOT_CONFIGURED | ACTIVE | PAUSED | ERROR
+  status        String    @default("NOT_CONFIGURED")
+  lastCheckedAt DateTime?
+  nextCheckAt   DateTime?
+  lastKnownData String? // JSON-encoded snapshot of the last provider response
+  confidence    Int? // 0-100, confidence in monitoring data freshness/accuracy
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

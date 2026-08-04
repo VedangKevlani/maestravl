@@ -1,0 +1,65 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import SegmentCard from './SegmentCard'
+import type { SegmentDTO } from './types'
+
+export default function Timeline({ tripId, segments }: { tripId: string; segments: SegmentDTO[] }) {
+  const router = useRouter()
+  const [items, setItems] = useState(segments)
+  const [saving, setSaving] = useState(false)
+
+  // The parent server component re-fetches (router.refresh()) after any
+  // add/edit/delete; sync local state so those changes actually show up
+  // instead of freezing at whatever `segments` looked like on first mount.
+  useEffect(() => {
+    setItems(segments)
+  }, [segments])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
+  )
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = items.findIndex((s) => s.id === active.id)
+    const newIndex = items.findIndex((s) => s.id === over.id)
+    const reordered = arrayMove(items, oldIndex, newIndex)
+    setItems(reordered)
+
+    setSaving(true)
+    await fetch('/api/segments/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tripId, orderedSegmentIds: reordered.map((s) => s.id) }),
+    })
+    setSaving(false)
+    router.refresh()
+  }
+
+  if (items.length === 0) {
+    return <p className="text-editorial text-white/40" style={{ fontSize: '0.9rem' }}>No segments yet — import a document or add one manually below.</p>
+  }
+
+  return (
+    <div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col gap-3">
+            {items.map((segment) => (
+              <SegmentCard key={segment.id} segment={segment} />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      {saving && <p className="text-label text-white/25 mt-2" style={{ fontSize: '0.6rem' }}>saving order…</p>}
+    </div>
+  )
+}

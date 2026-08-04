@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -42,3 +43,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/app/generated/prisma
+
+# database & uploaded document storage (never committed)
+/dev.db
+/dev.db-journal
+/storage/
+e2e/output/
+e2e/fixtures/*.png
+
+# tesseract.js language-model cache (downloaded on first OCR run)
+*.traineddata
