@@ -1,18 +1,28 @@
 // Ripple Travel Intelligence Engine — data model
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 //
-// NOTE: SQLite has no native enum type, so status/type fields below are
-// plain Strings holding one of a fixed set of values (documented alongside
-// each field). Validity is enforced in the API layer via zod, and the
-// canonical value lists live in lib/constants.ts.
+// NOTE: enum-like status/type fields below are plain Strings holding one of
+// a fixed set of values (documented alongside each field) rather than native
+// Postgres enums, so adding a new status doesn't require a migration.
+// Validity is enforced in the API layer via zod, and the canonical value
+// lists live in lib/constants.ts.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev (Windows/Mac); rhel-openssl-3.0.x is what
+  // Vercel's Node.js serverless functions run on — without it the query
+  // engine binary Prisma ships is for the wrong OS and every DB call 500s.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Supabase's pooled (PgBouncer, port 6543) connection — safe for
+  // serverless functions, which can't hold many long-lived DB connections.
+  url       = env("DATABASE_URL")
+  // Supabase's direct (port 5432) connection — migrations need a real
+  // connection, not a pooled one.
+  directUrl = env("DIRECT_URL")
 }
 
 model User {

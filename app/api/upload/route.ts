@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server'
-import { mkdir, writeFile } from 'node:fs/promises'
-import path from 'node:path'
 import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
 import { validateUploadedFile } from '@/lib/security/fileValidation'
 import { encryptBuffer, randomStorageFilename } from '@/lib/security/encryption'
+import { uploadDocument } from '@/lib/storage'
 import { extractText } from '@/lib/extraction/extractText'
 import { parseItinerary } from '@/lib/extraction/parse'
 import { normalizeItinerary } from '@/lib/extraction/normalize'
 import { initializeMonitoringForSegment } from '@/lib/monitoring/service'
-
-const STORAGE_DIR = path.resolve(process.cwd(), process.env.DOCUMENT_STORAGE_DIR || './storage/documents')
 
 export async function POST(req: Request) {
   const auth = await requireUserId()
@@ -44,9 +41,8 @@ export async function POST(req: Request) {
     tripId = trip.id
   }
 
-  await mkdir(STORAGE_DIR, { recursive: true })
   const storedFilename = randomStorageFilename()
-  await writeFile(path.join(STORAGE_DIR, storedFilename), encryptBuffer(bytes))
+  await uploadDocument(storedFilename, encryptBuffer(bytes))
 
   const document = await prisma.document.create({
     data: {

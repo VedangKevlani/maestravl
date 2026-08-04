@@ -98,20 +98,22 @@ transport mode.
 
 ## Data model
 
-SQLite has no native enum type, so status/type fields (`Trip.status`,
-`Segment.transportType`, `Segment.status`, `Document.status`,
-`MonitoringRecord.status`) are plain `String` columns. The canonical value
-lists live in `lib/constants.ts` — import from there rather than
-hard-coding string literals, and validation happens via `zod` in the API
-route handlers (Prisma/SQLite won't reject an invalid value on its own).
+Status/type fields (`Trip.status`, `Segment.transportType`, `Segment.status`,
+`Document.status`, `MonitoringRecord.status`) are plain `String` columns
+rather than native Postgres enums, so adding a new value never needs a
+migration. The canonical value lists live in `lib/constants.ts` — import
+from there rather than hard-coding string literals, and validation happens
+via `zod` in the API route handlers (Prisma won't reject an invalid value
+on its own).
 
 ## Security
 
-- Uploaded files are AES-256-GCM encrypted before being written to disk
-  (`lib/security/encryption.ts`), under `storage/documents/` — outside
-  `public/`, so there is no static URL that could ever serve one directly.
-  The only way to read a document back is `GET /api/documents/[id]/file`,
-  which checks the requesting user owns it, then decrypts on the fly.
+- Uploaded files are AES-256-GCM encrypted (`lib/security/encryption.ts`)
+  before being uploaded to a *private* Supabase Storage bucket
+  (`lib/storage.ts`) — there is no public URL that could ever serve one
+  directly. The only way to read a document back is
+  `GET /api/documents/[id]/file`, which checks the requesting user owns it,
+  then decrypts on the fly.
 - File type is verified by magic bytes, not by trusting the client's
   `Content-Type` header or filename extension.
 - PDFs containing `/JavaScript`, `/JS`, or `/OpenAction` are rejected

@@ -16,6 +16,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@prisma/client": "^5.22.0",
     "@studio-freight/lenis": "^1.0.42",
+    "@supabase/supabase-js": "^2.112.0",
     "bcryptjs": "^3.0.3",
     "canvas": "^3.2.3",
     "chrono-node": "^2.10.1",

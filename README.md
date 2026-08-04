@@ -16,7 +16,9 @@ for connecting real monitoring providers later.
 - **@studio-freight/lenis** — premium smooth scrolling
 
 **Travel Intelligence Engine**
-- **Prisma 5 + SQLite** — persistence, zero hosted-service cost
+- **Prisma 5 + Supabase Postgres** — persistence (free tier)
+- **Supabase Storage** — encrypted document blobs (free tier; local disk
+  storage doesn't persist on serverless hosts like Vercel)
 - **Auth.js (NextAuth v5)** — credentials auth, JWT sessions
 - **pdfjs-dist** + **tesseract.js** — layered text extraction (native PDF
   text, OCR fallback) — both free/open-source, no external API calls
@@ -29,15 +31,21 @@ for connecting real monitoring providers later.
 
 ```bash
 npm install
-cp .env.example .env   # or use the .env already in the repo for local dev
-npx prisma migrate dev # creates dev.db
+cp .env.example .env   # fill in your Supabase project's values (see comments in the file)
+npx prisma migrate dev # applies the schema to your Supabase Postgres DB
 npm run dev
 # Open http://localhost:3000 for the marketing site
 # Open http://localhost:3000/signup to try the Travel Intelligence Engine
 ```
 
-Required env vars (see `.env`): `DATABASE_URL`, `AUTH_SECRET`,
-`FILE_ENCRYPTION_KEY`, `DOCUMENT_STORAGE_DIR`. Generate secrets with:
+Needs a free [Supabase](https://supabase.com) project — a Postgres database
+plus a private Storage bucket named `documents` (Storage -> New bucket,
+"Public" off). See `.env.example` for exactly which values to copy from the
+Supabase dashboard.
+
+Required env vars (see `.env.example`): `DATABASE_URL`, `DIRECT_URL`,
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_SECRET`,
+`FILE_ENCRYPTION_KEY`. Generate the two secrets with:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # AUTH_SECRET
@@ -142,8 +150,8 @@ Scene mapping:
 
 ## Future Integrations
 
-**Done:** Auth (Auth.js credentials + JWT), database (Prisma + SQLite) — see
-the Travel Intelligence Engine section above.
+**Done:** Auth (Auth.js credentials + JWT), database (Prisma + Supabase
+Postgres) — see the Travel Intelligence Engine section above.
 
 Still ahead — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for specifics:
 - **Live monitoring** — flight/train/bus/ferry status providers (adapters
