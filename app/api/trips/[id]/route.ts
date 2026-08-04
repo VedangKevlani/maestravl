@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { unlink } from 'node:fs/promises'
+import path from 'node:path'
 import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
+
+const STORAGE_DIR = path.resolve(process.cwd(), process.env.DOCUMENT_STORAGE_DIR || './storage/documents')
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireUserId()
@@ -52,8 +56,19 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if ('error' in auth) return auth.error
   const { id } = await params
 
-  const existing = await prisma.trip.findFirst({ where: { id, userId: auth.userId } })
+  const existing = await prisma.trip.findFirst({
+    where: { id, userId: auth.userId },
+    include: { documents: { select: { storedFilename: true } } },
+  })
   if (!existing) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
+
+  // The DB cascade (Document -> Trip onDelete: Cascade) removes the rows, but
+  // the encrypted files those rows point to live on disk and won't be cleaned
+  // up by the database — delete them first so a trip removal doesn't leave
+  // orphaned encrypted documents behind.
+  await Promise.all(
+    existing.documents.map((d) => unlink(path.join(STORAGE_DIR, d.storedFilename)).catch(() => {}))
+  )
 
   await prisma.trip.delete({ where: { id } })
   return NextResponse.json({ ok: true })

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TripDTO } from './types'
+import TripCardMenu from './TripCardMenu'
 
 export default function TripHeader({ trip }: { trip: TripDTO }) {
   const router = useRouter()
@@ -31,9 +32,12 @@ export default function TripHeader({ trip }: { trip: TripDTO }) {
           <p className="text-label text-white/40 mb-2">trip</p>
           <h1 className="text-display text-white" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)' }}>{trip.title}</h1>
         </div>
-        <span className="text-label px-3 py-1.5 rounded-full" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788' }}>
-          {trip.status}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-label px-3 py-1.5 rounded-full whitespace-nowrap" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788' }}>
+            {trip.status}
+          </span>
+          <TripCardMenu tripId={trip.id} tripTitle={trip.title} redirectTo="/dashboard" />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mt-5">

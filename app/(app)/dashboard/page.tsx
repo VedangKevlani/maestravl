@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import TripCardMenu from '../../components/TripCardMenu'
 
 function formatDate(d: Date | null) {
   if (!d) return null
@@ -48,11 +49,14 @@ export default async function DashboardPage() {
             const activeMonitoring = trip.segments.filter((s) => s.monitoring?.status === 'ACTIVE').length
             return (
               <Link key={trip.id} href={`/trips/${trip.id}`} className="glass-card p-6 block hover:bg-white/[0.06] transition-colors">
-                <div className="flex items-start justify-between mb-4">
-                  <h2 className="text-editorial text-white font-semibold" style={{ fontSize: '1.1rem' }}>{trip.title}</h2>
-                  <span className="text-label px-2.5 py-1 rounded-full" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788', fontSize: '0.6rem' }}>
-                    {trip.status}
-                  </span>
+                <div className="flex items-start justify-between mb-4 gap-2">
+                  <h2 className="text-editorial text-white font-semibold min-w-0 truncate" style={{ fontSize: '1.1rem' }}>{trip.title}</h2>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-label px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788', fontSize: '0.6rem' }}>
+                      {trip.status}
+                    </span>
+                    <TripCardMenu tripId={trip.id} tripTitle={trip.title} />
+                  </div>
                 </div>
                 <p className="text-editorial text-white/50 mb-1" style={{ fontSize: '0.85rem' }}>
                   {trip.segments.length} segment{trip.segments.length === 1 ? '' : 's'} · {trip.passengers.length} passenger{trip.passengers.length === 1 ? '' : 's'}
