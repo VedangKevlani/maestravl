@@ -7,7 +7,10 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
  */
 export async function extractNativePdfText(bytes: Uint8Array): Promise<string> {
   const loadingTask = getDocument({
-    data: bytes,
+    // pdf.js rejects Node's Buffer (a Uint8Array subclass) with "Please provide
+    // binary data as `Uint8Array`, rather than `Buffer`." — normalize to a plain
+    // Uint8Array view (no copy) so callers can pass a Buffer safely.
+    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     disableFontFace: true,
     useWorkerFetch: false,
     verbosity: 0,
@@ -38,7 +41,11 @@ export async function renderPdfPagesToPng(bytes: Uint8Array): Promise<Buffer[]> 
     )
   })
 
-  const loadingTask = getDocument({ data: bytes, useWorkerFetch: false, verbosity: 0 })
+  const loadingTask = getDocument({
+    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    useWorkerFetch: false,
+    verbosity: 0,
+  })
   const doc = await loadingTask.promise
   try {
     const buffers: Buffer[] = []

@@ -43,11 +43,11 @@ const FLIGHT_NUMBER_STRICT_RE = /\b([A-Z]{2})\s?-?\s?(\d{2,4})\b/g
 // numbers ("B12") — only accept these when the prefix is a KNOWN airline.
 const FLIGHT_NUMBER_LOOSE_RE = /\b([A-Z][0-9]|[0-9][A-Z])\s?-?\s?(\d{1,4})\b/g
 const AIRPORT_CODE_RE = /\b([A-Z]{3})\b/g
-const CONFIRMATION_RE = /(?:booking reference|confirmation(?: number| code)?|record locator|pnr)[:\s#-]*\s*([A-Z0-9]{5,8})\b/i
-const TICKET_RE = /ticket(?:\s*number)?[:\s#-]*\s*([A-Z0-9-]{6,15})\b/i
+const CONFIRMATION_RE = /(?:booking reference|confirmation(?: number| code)?|record locator|pnr)[:\s#-]*\s*([A-Z0-9]{5,8})\b/gi
+const TICKET_RE = /ticket(?:\s*number)?[:\s#-]*\s*([A-Z0-9-]{6,15})\b/gi
 const SEAT_RE = /seat[:\s#-]*\s*(\d{1,3}[A-Z])\b/i
-const GATE_RE = /gate[:\s#-]*\s*([A-Z0-9]{1,4})\b/i
-const TERMINAL_RE = /terminal[:\s#-]*\s*([A-Z0-9]{1,3})\b/i
+const GATE_RE = /gate[:\s#-]*\s*([A-Z0-9]{1,4})\b/gi
+const TERMINAL_RE = /terminal[:\s#-]*\s*([A-Z0-9]{1,3})\b/gi
 const CABIN_RE = /\b(economy|premium economy|business|first)\s*class\b|\bcabin[:\s]*(\w+)/i
 const PRICE_RE = /(USD|EUR|GBP|JMD|CAD|\$|€|£)\s?([\d,]+\.\d{2})/
 const CURRENCY_SYMBOLS: Record<string, string> = { $: 'USD', '€': 'EUR', '£': 'GBP' }
@@ -101,7 +101,18 @@ function findFlightAnchors(text: string): { identifier: string; provider: string
     anchors.push({ identifier: `${prefix}${digits}`, provider: airline, confidence: 95, index })
   }
 
-  return anchors.sort((a, b) => a.index - b.index)
+  anchors.sort((a, b) => a.index - b.index)
+
+  // The same flight is often mentioned more than once in one document (a
+  // structured itinerary block, then a prose "day of travel" recap that
+  // restates the flight number) — only the first mention should become a
+  // segment, or the recap gets misread as a connecting/return flight.
+  const seenIdentifiers = new Set<string>()
+  return anchors.filter((a) => {
+    if (seenIdentifiers.has(a.identifier)) return false
+    seenIdentifiers.add(a.identifier)
+    return true
+  })
 }
 
 /** Finds up to two dictionary-known airport codes in a text window, in order of appearance. */
@@ -154,14 +165,38 @@ function toTitleCase(s: string): string {
     .join(' ')
 }
 
+// These labels (ticket/confirmation/gate/terminal) are matched case-insensitively
+// so "TICKET NUMBER" and "Ticket Number" both work, but that /i flag also makes
+// the *value* capture group case-insensitive — which lets it match ordinary
+// lowercase prose (e.g. "Electronic Ticket Passenger Itinerary" capturing
+// "Passenger", or "Gates D30" capturing a stray "s"). Real codes are written
+// in caps in these documents, so require the captured text to already be
+// all-caps rather than trusting the match and calling .toUpperCase() on it.
+function isAlreadyUpperCase(value: string): boolean {
+  return value === value.toUpperCase()
+}
+
+/**
+ * Returns the first regex match (across all occurrences of the label in the
+ * text) whose captured value is already all-caps — skipping label mentions
+ * that happened to capture ordinary lowercase prose instead of a real code,
+ * rather than giving up as soon as the first occurrence turns out to be bogus.
+ */
+function firstValidUpperCaseMatch(text: string, re: RegExp): string | null {
+  for (const m of text.matchAll(re)) {
+    if (isAlreadyUpperCase(m[1])) return m[1]
+  }
+  return null
+}
+
 function findConfirmationNumber(text: string): ExtractedField<string> {
-  const m = text.match(CONFIRMATION_RE)
-  return m ? field(m[1].toUpperCase(), 88, 'regex') : field<string>(null, 0, 'unset')
+  const value = firstValidUpperCaseMatch(text, CONFIRMATION_RE)
+  return value ? field(value, 88, 'regex') : field<string>(null, 0, 'unset')
 }
 
 function findTicketNumber(scope: string): ExtractedField<string> {
-  const m = scope.match(TICKET_RE)
-  return m ? field(m[1].toUpperCase(), 85, 'regex') : field<string>(null, 0, 'unset')
+  const value = firstValidUpperCaseMatch(scope, TICKET_RE)
+  return value ? field(value, 85, 'regex') : field<string>(null, 0, 'unset')
 }
 
 function findSeat(scope: string): ExtractedField<string> {
@@ -170,13 +205,13 @@ function findSeat(scope: string): ExtractedField<string> {
 }
 
 function findGate(scope: string): ExtractedField<string> {
-  const m = scope.match(GATE_RE)
-  return m ? field(m[1].toUpperCase(), 82, 'regex') : field<string>(null, 0, 'unset')
+  const value = firstValidUpperCaseMatch(scope, GATE_RE)
+  return value ? field(value, 82, 'regex') : field<string>(null, 0, 'unset')
 }
 
 function findTerminal(scope: string): ExtractedField<string> {
-  const m = scope.match(TERMINAL_RE)
-  return m ? field(m[1].toUpperCase(), 82, 'regex') : field<string>(null, 0, 'unset')
+  const value = firstValidUpperCaseMatch(scope, TERMINAL_RE)
+  return value ? field(value, 82, 'regex') : field<string>(null, 0, 'unset')
 }
 
 function findCabin(scope: string): ExtractedField<string> {
@@ -253,7 +288,11 @@ export function parseItinerary(rawText: string, referenceDate: Date = new Date()
         if (info) seg.arrivalLocation = field(`${info.city} (${info.name})`, airports[1].confidence, 'dictionary')
       }
 
-      const { departure, arrival } = findDateTimes(scope, referenceDate)
+      // Dates found *before* the flight mention are usually document metadata
+      // (booking date, issue date) rather than travel dates — those almost
+      // always appear at or after "Flight AA123" itself, so search forward only.
+      const dateScope = text.slice(anchor.index, nextIndex ?? Math.min(text.length, anchor.index + SCOPE_RADIUS * 2))
+      const { departure, arrival } = findDateTimes(dateScope, referenceDate)
       seg.departureTime = departure
       seg.arrivalTime = arrival
 
