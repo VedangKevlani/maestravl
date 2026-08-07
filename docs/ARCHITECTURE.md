@@ -134,6 +134,99 @@ on its own).
   ownership (`trip.userId === session.user.id`) before reading or writing
   anything — there's no client-trusted user id anywhere.
 
+## Agentic recovery (in progress)
+
+The models and logic backing autonomous disruption recovery (spec: a
+disrupted segment should trigger Maestravl to work out what's affected and
+coordinate a fix, not just email the passenger that something changed).
+Built incrementally — this section reflects what's actually implemented,
+not the target end-state.
+
+**Data model** (`prisma/schema.prisma`, "Agentic recovery" section):
+`Disruption` (a detected status change worth acting on) → `AgentRun` (one
+resolution attempt, state-machine `status` from `DETECTED` through
+`COMPLETED`) → `AgentAction` (the step-by-step audit log an `AgentRun`
+produces — this is also what the passenger-facing recovery timeline will
+read from). `ProviderContact`, `Communication`, `RescheduleRequest`, and
+`Alternative` round out the workflow: who to contact, what was said, what
+new time was requested, and what ranked alternatives exist if the original
+can't be recovered.
+
+There is deliberately **no persisted `Dependency` table**. Which segments
+are downstream of a disrupted one is fully derivable from each segment's
+own `order`/time fields, so it's computed on demand (see below) rather than
+stored and risking drift whenever a segment's schedule is edited.
+
+**Dependency/impact engine** (`lib/dependency/graph.ts`): pure,
+deterministic logic — no AI, no I/O — matching spec section 17's
+instruction to build deterministic tests before adding AI reasoning on top.
+Given a trip's segments, which one was disrupted, and a delay in minutes,
+`calculateImpact` walks every segment scheduled after it and classifies
+each as:
+
+- **DIRECT** — the disruption-shifted timeline conflicts with this
+  segment's scheduled start (an outright missed connection).
+- **POTENTIAL** — buffer shrinks to within `WARNING_BUFFER_MINUTES` (120,
+  tunable) but doesn't break outright.
+- **UNAFFECTED** — enough buffer absorbs the shift.
+
+The cascade math mirrors how airlines reason about missed connections: each
+segment's *actual* start is `max(its own scheduled start, the previous
+segment's actual end)`, and its actual end preserves its own original
+duration from there — so a large enough gap anywhere in the chain lets
+later segments return to their originally scheduled times rather than
+staying perpetually "behind." Segments with missing schedule data are
+reported as `POTENTIAL` with a null buffer rather than silently assumed
+unaffected (spec section 20: never fake a result you don't have).
+
+**Detection → orchestration pipeline (built):**
+
+```
+runMonitoringCheck (lib/monitoring/service.ts)
+  → status change? → classifyDisruption (lib/agents/classify.ts)
+      → disruptive? → handleDisruptionDetection (lib/agents/detect.ts)
+          → creates Disruption row
+          → startAgentRun (lib/agents/orchestrator.ts)
+              → creates AgentRun (status DETECTED)
+              → claims it (DETECTED -> ANALYZING, guards re-entrant calls)
+              → planAnalysis (lib/agents/analyze.ts) — pure: runs the
+                dependency engine, decides what's affected
+              → logs one AgentAction per plan step
+              → affected segments exist? → sendDisruptionImpactEmail
+              → AgentRun.status -> COMPLETED | ACTION_REQUIRED
+```
+
+`classifyDisruption` filters out routine progression (ON_TIME → BOARDING →
+DEPARTED → ARRIVED) and short delays (< `DISRUPTION_DELAY_THRESHOLD_MINUTES`,
+30 by default) — those still get the existing plain status-change email,
+just no `Disruption`/`AgentRun`. A genuine delay or cancellation gets both:
+the plain status email, and — only if `planAnalysis` finds other segments
+actually affected — a second, richer email listing what's threatened and
+why (`sendDisruptionImpactEmail` in `lib/email.ts`).
+
+**Honesty boundary (spec section 20):** `AgentRun` only ever reaches
+`COMPLETED` when there's genuinely nothing left to do (no downstream
+impact found). Any real impact lands the run in `ACTION_REQUIRED` and says
+so in the passenger email — Maestravl doesn't have contact-discovery or
+provider-communication yet, so it will not claim to have contacted anyone
+or requested a change it didn't actually request.
+
+**Risk policy** (`lib/agents/policy.ts`): every `AgentAction` is classified
+LOW/MEDIUM/HIGH via `classifyActionRisk` before it's logged;
+`canAutoExecute` gates whether it runs immediately (`EXECUTED`) or stops
+for approval (`REQUIRES_APPROVAL`). Only `ANALYZE_IMPACT`/`VERIFY`/`ESCALATE`/
+`NOTIFY_PASSENGER` actions exist so far, all LOW — the MEDIUM/HIGH paths
+(a reschedule with a fee, a non-refundable cancellation) are implemented
+in the policy module already but have no caller yet, since nothing
+proposes a reschedule until the rescheduling agent exists.
+
+**Not yet built:** contact discovery, the communication agent (only
+passenger-facing email exists — nothing provider-facing), the
+rescheduling/alternatives agents, and the passenger-facing recovery
+timeline UI. `AgentRun.status` also doesn't yet have a `CONTACTING` /
+`WAITING_FOR_RESPONSE` / `RESCHEDULING` path — those states exist in the
+schema but nothing produces them yet.
+
 ## Known limitations (by design, for this iteration)
 
 - Extraction is tuned heavily toward flights; train/bus/ferry documents get

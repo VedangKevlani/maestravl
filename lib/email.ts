@@ -80,3 +80,41 @@ export async function sendStatusChangeEmail(
   if (error) throw new Error(error.message)
   return subject
 }
+
+/** Sent when a disruption's impact analysis finds other segments on the trip that may be affected — see lib/agents/analyze.ts. Only sent when there's something to report; a disruption with no downstream impact just gets the plain sendStatusChangeEmail above. */
+export async function sendDisruptionImpactEmail(
+  to: string,
+  opts: {
+    recipientName: string
+    tripTitle: string
+    disruptedSegmentLabel: string
+    newStatus: string
+    delayMinutes: number | null
+    affected: { label: string; reason: string }[]
+  }
+) {
+  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const newLabel = formatMonitoringStatus(opts.newStatus)
+  const subject = `${opts.tripTitle}: ${opts.affected.length} other reservation${opts.affected.length === 1 ? '' : 's'} may need attention`
+
+  const affectedHtml = opts.affected
+    .map((a) => `<li><strong>${a.label}</strong> — ${a.reason}</li>`)
+    .join('')
+
+  const { error } = await resend.emails.send({
+    from,
+    to,
+    subject,
+    html: `
+      <p>Hi ${opts.recipientName},</p>
+      <p><strong>${opts.disruptedSegmentLabel}</strong> (${opts.tripTitle}) is now <strong>${newLabel}</strong>${
+        opts.delayMinutes ? ` (about ${opts.delayMinutes} minutes)` : ''
+      }. Here's what that means for the rest of your trip:</p>
+      <ul>${affectedHtml}</ul>
+      <p>Maestravl can't yet reach out to these providers on your behalf — you may want to confirm directly with them for now. We'll keep watching and let you know if anything changes.</p>
+    `,
+  })
+
+  if (error) throw new Error(error.message)
+  return subject
+}

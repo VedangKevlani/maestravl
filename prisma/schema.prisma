@@ -61,6 +61,8 @@ model Trip {
   segments         Segment[]
   documents        Document[]
   notificationLogs NotificationLog[]
+  disruptions      Disruption[]
+  agentRuns        AgentRun[]
 }
 
 model Passenger {
@@ -141,9 +143,15 @@ model Segment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  passengerLinks   SegmentPassenger[]
-  monitoring       MonitoringRecord?
-  notificationLogs NotificationLog[]
+  passengerLinks     SegmentPassenger[]
+  monitoring         MonitoringRecord?
+  notificationLogs   NotificationLog[]
+  disruptions        Disruption[]
+  providerContacts   ProviderContact[]
+  agentActions       AgentAction[]
+  communications     Communication[]
+  rescheduleRequests RescheduleRequest[]
+  alternatives       Alternative[]
 }
 
 model SegmentPassenger {
@@ -212,6 +220,197 @@ model NotificationLog {
   subject        String?
   success        Boolean @default(false)
   errorMessage   String?
+
+  createdAt DateTime @default(now())
+}
+
+// --- Agentic recovery ---------------------------------------------------
+// The models below back the autonomous recovery workflow: a monitoring
+// status change becomes a Disruption, which starts an AgentRun, which
+// executes a sequence of logged AgentActions (contacting providers,
+// requesting reschedules, notifying the passenger) until resolved.
+//
+// There is deliberately no persisted "Dependency" table — which segments
+// are downstream of a disrupted one is computed on demand from each
+// segment's own order/time fields (see lib/dependency/graph.ts) rather than
+// stored and kept in sync, since it's fully derivable and changes whenever
+// a segment's time does.
+
+// A detected change to a segment's status significant enough to threaten
+// the rest of the trip. One MonitoringCheckResult status transition (see
+// lib/monitoring/service.ts) that isn't just a benign update becomes one
+// Disruption row, which is what an AgentRun is created to resolve.
+model Disruption {
+  id        String  @id @default(cuid())
+  tripId    String
+  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  segmentId String
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  /// MonitoringCheckStatus values, e.g. ON_TIME | DELAYED | CANCELLED
+  previousStatus String?
+  newStatus      String
+
+  previousDepartureTime DateTime?
+  newDepartureTime      DateTime?
+  delayMinutes          Int?
+
+  /// LOW | MEDIUM | HIGH — see lib/dependency/graph.ts for how this is derived
+  severity   String
+  /// 0-100 — carried over from the monitoring provider's own confidence where it reports one
+  confidence Int      @default(100)
+  source     String // adapter id that detected it, e.g. "flight-adapter-v1"
+  detectedAt DateTime @default(now())
+
+  agentRuns AgentRun[]
+}
+
+// One resolution attempt for a Disruption. Persisted and resumable by
+// design (see AgentAction below) so recovery survives a serverless cold
+// start or the passenger closing their browser — the next cron tick or
+// page load picks the run up by its `status` rather than relying on an
+// in-memory process.
+model AgentRun {
+  id           String     @id @default(cuid())
+  tripId       String
+  trip         Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  disruptionId String
+  disruption   Disruption @relation(fields: [disruptionId], references: [id], onDelete: Cascade)
+
+  /// DETECTED | ANALYZING | CONTACTING | WAITING_FOR_RESPONSE | RESCHEDULING |
+  /// CONFIRMED | FAILED | ALTERNATIVE_FOUND | ACTION_REQUIRED | COMPLETED
+  status      String    @default("DETECTED")
+  summary     String? // short passenger-facing rollup, e.g. "Everything is handled."
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  actions            AgentAction[]
+  communications     Communication[]
+  rescheduleRequests RescheduleRequest[]
+  alternatives       Alternative[]
+}
+
+// One step of an AgentRun's DETECT -> IMPACT -> CONTACT -> ... workflow.
+// This is the audit trail from spec section 14 ("Agent Action Log") and the
+// source of the passenger-facing timeline (section 11) — every autonomous
+// action must produce one of these, in plain language, before or as it happens.
+model AgentAction {
+  id         String   @id @default(cuid())
+  agentRunId String
+  agentRun   AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  segmentId  String?
+  segment    Segment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+
+  /// ANALYZE_IMPACT | FIND_CONTACT | CONTACT_PROVIDER | REQUEST_RESCHEDULE |
+  /// VERIFY | UPDATE_ITINERARY | NOTIFY_PASSENGER | SEARCH_ALTERNATIVES | ESCALATE
+  type String
+
+  /// LOW | MEDIUM | HIGH — the risk tier this action falls under (spec section 9)
+  riskLevel String @default("LOW")
+  /// PENDING | REQUIRES_APPROVAL | APPROVED | EXECUTED | FAILED | SKIPPED
+  status    String @default("PENDING")
+
+  description String // plain-language log line, e.g. "Hotel contact found from booking confirmation."
+  detail      String? // JSON-encoded structured input/output, for debugging — never the only record of what happened
+  approvedAt  DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+// Contact info for the provider tied to one segment. The itinerary/booking
+// confirmation is always the source of truth (see docs/INTEGRATION.md) —
+// `source` and `confidence` exist so a discovered-but-unverified contact
+// (e.g. a provider website's general contact form) never gets treated the
+// same as one lifted straight from the booking confirmation.
+model ProviderContact {
+  id        String  @id @default(cuid())
+  segmentId String
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  /// EMAIL | SMS | WHATSAPP | WEB_FORM | PORTAL | OTHER
+  channel String
+  value   String // email address, phone number, or form/portal URL
+
+  /// ITINERARY | BOOKING_CONFIRMATION | MANUAL | WEB_LOOKUP
+  source     String
+  confidence Int    @default(100)
+
+  createdAt DateTime @default(now())
+
+  communications Communication[]
+}
+
+// One message sent to (or received from) a provider on the passenger's
+// behalf. Mirrors NotificationLog's shape deliberately, but scoped to
+// provider-facing coordination rather than passenger status emails.
+model Communication {
+  id         String           @id @default(cuid())
+  agentRunId String
+  agentRun   AgentRun         @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  segmentId  String
+  segment    Segment          @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    ProviderContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  /// OUTBOUND | INBOUND
+  direction String
+  /// EMAIL | SMS | WHATSAPP | WEB_FORM | PORTAL | OTHER
+  channel   String
+
+  subject String?
+  content String // full message text — treat as PII, same as NotificationLog.recipientEmail
+
+  /// DRAFTED | SENT | FAILED | DELIVERED | RESPONDED
+  status       String    @default("DRAFTED")
+  errorMessage String?
+  sentAt       DateTime?
+  respondedAt  DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+// A specific new-time ask sent to a provider for one segment. Distinct from
+// Communication (the message envelope) so "what time did we ask for and did
+// they say yes" can be queried without parsing message bodies.
+model RescheduleRequest {
+  id         String   @id @default(cuid())
+  agentRunId String
+  agentRun   AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  segmentId  String
+  segment    Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  requestedTime DateTime
+  reason        String?
+  feeAmount     Float?
+  currency      String?
+
+  /// REQUESTED | CONFIRMED | REJECTED | NO_RESPONSE | CANCELLED
+  status      String    @default("REQUESTED")
+  respondedAt DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+// A ranked candidate resolution for a segment that couldn't simply be moved
+// to the originally-requested time (spec section 8) — e.g. three different
+// new pickup times for an airport transfer, ranked by how little they
+// disrupt the rest of the trip.
+model Alternative {
+  id         String   @id @default(cuid())
+  agentRunId String
+  agentRun   AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  segmentId  String
+  segment    Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  label            String // "Option A"
+  proposedTime     DateTime?
+  additionalCost   Float?
+  currency         String?
+  /// NONE | MINOR | MAJOR — impact on segments downstream of this one if selected
+  downstreamImpact String
+  rank             Int
+  selected         Boolean   @default(false)
 
   createdAt DateTime @default(now())
 }

@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db'
 import { sendStatusChangeEmail } from '@/lib/email'
 import { getAdapterForTransportType } from './registry'
+import { handleDisruptionDetection } from '@/lib/agents/detect'
+import { segmentLabel } from '@/lib/segmentLabel'
 import type { MonitorableSegment, MonitoringCheckResult, MonitoringCheckStatus } from './types'
 import type { TransportType } from '@/lib/constants'
 
@@ -78,13 +80,7 @@ export async function initializeMonitoringForSegment(segmentId: string) {
   return record
 }
 
-export function segmentLabel(segment: { identifier: string | null; provider: string | null; departureLocationCode: string | null; arrivalLocationCode: string | null }) {
-  const name = segment.identifier || segment.provider || 'Your trip segment'
-  const route = segment.departureLocationCode && segment.arrivalLocationCode
-    ? ` (${segment.departureLocationCode} → ${segment.arrivalLocationCode})`
-    : ''
-  return `${name}${route}`
-}
+export { segmentLabel }
 
 /** Emails every passenger on the segment about a status change and logs the attempt(s). */
 async function notifyPassengersOfStatusChange(segmentId: string, previousStatus: string | null, newStatus: string) {
@@ -219,6 +215,11 @@ export async function runMonitoringCheck(segmentId: string) {
   // otherwise the very first check would "change" from nothing to something.
   if (previousStatus && result.status !== previousStatus && result.status !== 'UNKNOWN') {
     await notifyPassengersOfStatusChange(segmentId, previousStatus, result.status)
+    // Disruptive changes (a real delay or a cancellation) additionally
+    // start a recovery AgentRun — see lib/agents/detect.ts. Routine
+    // progression (BOARDING/DEPARTED/ARRIVED/back to ON_TIME) is already
+    // covered by the notification above and isn't disruptive on its own.
+    await handleDisruptionDetection(segment, previousStatus, result)
   }
 
   return record
