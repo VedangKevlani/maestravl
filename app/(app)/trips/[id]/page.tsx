@@ -16,7 +16,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     where: { id, userId },
     include: {
       passengers: true,
-      segments: { orderBy: { order: 'asc' }, include: { monitoring: true } },
+      segments: { orderBy: { order: 'asc' }, include: { monitoring: true, passengerLinks: true } },
     },
   })
   if (!trip) notFound()
@@ -53,6 +53,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       baggageInfo: s.baggageInfo,
       notes: s.notes,
       confidenceScores: s.confidenceScores,
+      passengerIds: s.passengerLinks.map((l) => l.passengerId),
       monitoring: s.monitoring
         ? {
             status: s.monitoring.status,
@@ -70,7 +71,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
 
       <section className="mt-10">
         <p className="text-label text-white/40 mb-3">timeline</p>
-        <Timeline tripId={dto.id} segments={dto.segments} />
+        <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} />
       </section>
 
       <section className="mt-10">

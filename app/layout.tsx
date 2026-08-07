@@ -3,11 +3,11 @@ import './globals.css'
 import MotionProvider from './components/MotionProvider'
 
 export const metadata: Metadata = {
-  title: 'Ripple — The Intelligence Behind Every Journey',
-  description: 'Ripple is the autonomous coordination layer for tourism. When disruptions happen, every stakeholder is updated before you even notice.',
+  title: 'Maestravl — The Intelligence Behind Every Journey',
+  description: 'Maestravl is the autonomous coordination layer for tourism. When disruptions happen, every stakeholder is updated before you even notice.',
   openGraph: {
-    title: 'Ripple — The Intelligence Behind Every Journey',
-    description: 'When travel changes, Ripple coordinates everything.',
+    title: 'Maestravl — The Intelligence Behind Every Journey',
+    description: 'When travel changes, Maestravl coordinates everything.',
     type: 'website',
   },
 }

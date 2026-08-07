@@ -8,6 +8,7 @@ export default function TripHeader({ trip }: { trip: TripDTO }) {
   const router = useRouter()
   const [addingPassenger, setAddingPassenger] = useState(false)
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   async function addPassenger(e: React.FormEvent) {
@@ -17,10 +18,11 @@ export default function TripHeader({ trip }: { trip: TripDTO }) {
     await fetch(`/api/trips/${trip.id}/passengers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), isPrimary: trip.passengers.length === 0 }),
+      body: JSON.stringify({ name: name.trim(), email: email.trim(), isPrimary: trip.passengers.length === 0 }),
     })
     setSubmitting(false)
     setName('')
+    setEmail('')
     setAddingPassenger(false)
     router.refresh()
   }
@@ -42,23 +44,33 @@ export default function TripHeader({ trip }: { trip: TripDTO }) {
 
       <div className="flex flex-wrap items-center gap-2 mt-5">
         {trip.passengers.map((p) => (
-          <span key={p.id} className="text-editorial px-3 py-1.5 rounded-full glass-card" style={{ fontSize: '0.82rem' }}>
-            {p.name}{p.isPrimary ? ' (primary)' : ''}
+          <span key={p.id} className="text-editorial px-3 py-1.5 rounded-full glass-card" style={{ fontSize: '0.82rem' }} title={p.email ?? 'No email on file — cannot be notified'}>
+            {p.name}{p.isPrimary ? ' (primary)' : ''}{!p.email && <span className="text-white/30"> · no email</span>}
           </span>
         ))}
         {addingPassenger ? (
-          <form onSubmit={addPassenger} className="flex items-center gap-2">
+          <form onSubmit={addPassenger} className="flex items-center gap-2 flex-wrap">
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onBlur={() => { if (!name.trim()) setAddingPassenger(false) }}
               placeholder="Passenger name"
+              className="glass-card px-3 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+              style={{ fontSize: '0.82rem' }}
+            />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email (for notifications)"
               className="glass-card px-3 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
               style={{ fontSize: '0.82rem' }}
             />
             <button type="submit" disabled={submitting} className="text-label text-white/60 hover:text-white" style={{ fontSize: '0.65rem' }}>
               {submitting ? '…' : 'Add'}
+            </button>
+            <button type="button" onClick={() => { setAddingPassenger(false); setName(''); setEmail('') }} className="text-label text-white/30 hover:text-white/60" style={{ fontSize: '0.65rem' }}>
+              Cancel
             </button>
           </form>
         ) : (

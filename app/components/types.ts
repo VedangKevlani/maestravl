@@ -37,6 +37,7 @@ export interface SegmentDTO {
   notes: string | null
   confidenceScores: string | null
   monitoring: MonitoringDTO | null
+  passengerIds: string[]
 }
 
 export interface PassengerDTO {

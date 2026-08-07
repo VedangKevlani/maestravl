@@ -5,7 +5,28 @@ import { CSS } from '@dnd-kit/utilities'
 import { useRouter } from 'next/navigation'
 import ConfidenceBadge from './ConfidenceBadge'
 import SegmentEditForm from './SegmentEditForm'
-import { TRANSPORT_ICONS, type SegmentDTO } from './types'
+import { TRANSPORT_ICONS, type PassengerDTO, type SegmentDTO } from './types'
+import { formatMonitoringStatus } from '@/lib/monitoring/format'
+
+const CHECK_STATUS_STYLES: Record<string, { bg: string; fg: string }> = {
+  ON_TIME: { bg: 'rgba(82,183,136,0.12)', fg: '#52b788' },
+  ARRIVED: { bg: 'rgba(82,183,136,0.12)', fg: '#52b788' },
+  BOARDING: { bg: 'rgba(74,160,216,0.12)', fg: '#4aa0d8' },
+  DEPARTED: { bg: 'rgba(74,160,216,0.12)', fg: '#4aa0d8' },
+  DELAYED: { bg: 'rgba(212,168,83,0.15)', fg: '#d4a853' },
+  CANCELLED: { bg: 'rgba(229,72,77,0.12)', fg: '#e5484d' },
+  UNKNOWN: { bg: 'rgba(255,255,255,0.08)', fg: 'rgba(255,255,255,0.5)' },
+}
+
+function parseCheckStatus(lastKnownData: string | null): string | null {
+  if (!lastKnownData) return null
+  try {
+    const parsed = JSON.parse(lastKnownData) as { status?: string }
+    return parsed.status ?? null
+  } catch {
+    return null
+  }
+}
 
 function formatDateTime(iso: string | null) {
   if (!iso) return null
@@ -19,10 +40,11 @@ const MONITORING_LABEL: Record<string, string> = {
   ERROR: 'Monitoring error',
 }
 
-export default function SegmentCard({ segment }: { segment: SegmentDTO }) {
+export default function SegmentCard({ segment, passengers }: { segment: SegmentDTO; passengers: PassengerDTO[] }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [checking, setChecking] = useState(false)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: segment.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -32,6 +54,8 @@ export default function SegmentCard({ segment }: { segment: SegmentDTO }) {
     confidenceScores = segment.confidenceScores ? JSON.parse(segment.confidenceScores) : {}
   } catch { /* ignore */ }
   const fieldsNeedingReview = Object.entries(confidenceScores).filter(([, v]) => v < 70)
+  const checkStatus = parseCheckStatus(segment.monitoring?.lastKnownData ?? null)
+  const linkedPassengers = passengers.filter((p) => segment.passengerIds.includes(p.id))
 
   async function handleDelete() {
     if (!confirm('Remove this segment from the trip?')) return
@@ -40,10 +64,17 @@ export default function SegmentCard({ segment }: { segment: SegmentDTO }) {
     router.refresh()
   }
 
+  async function handleCheckNow() {
+    setChecking(true)
+    await fetch(`/api/segments/${segment.id}/monitor`, { method: 'POST' })
+    setChecking(false)
+    router.refresh()
+  }
+
   if (editing) {
     return (
       <div ref={setNodeRef} style={style} className="glass-card p-5">
-        <SegmentEditForm segment={segment} onDone={() => { setEditing(false); router.refresh() }} onCancel={() => setEditing(false)} />
+        <SegmentEditForm segment={segment} passengers={passengers} onDone={() => { setEditing(false); router.refresh() }} onCancel={() => setEditing(false)} />
       </div>
     )
   }
@@ -101,9 +132,36 @@ export default function SegmentCard({ segment }: { segment: SegmentDTO }) {
           </div>
         )}
 
-        <p className="text-label text-white/20 mt-3" style={{ fontSize: '0.6rem' }}>
-          {segment.monitoring ? MONITORING_LABEL[segment.monitoring.status] : 'Monitoring not yet connected'}
+        <p className="text-label text-white/25 mt-3" style={{ fontSize: '0.6rem' }}>
+          {linkedPassengers.length === 0
+            ? 'No passengers linked — won\'t be notified of changes'
+            : `Notifies: ${linkedPassengers.map((p) => p.email ? p.name : `${p.name} (no email)`).join(', ')}`}
         </p>
+
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <p className="text-label text-white/20" style={{ fontSize: '0.6rem' }}>
+            {segment.monitoring ? MONITORING_LABEL[segment.monitoring.status] : 'Monitoring not yet connected'}
+            {segment.monitoring?.lastCheckedAt && ` · last checked ${formatDateTime(segment.monitoring.lastCheckedAt)}`}
+          </p>
+          {checkStatus && (
+            <span
+              className="text-label px-2 py-0.5 rounded-full"
+              style={{ background: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).bg, color: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).fg, fontSize: '0.6rem' }}
+            >
+              {formatMonitoringStatus(checkStatus)}
+            </span>
+          )}
+          {segment.monitoring?.status === 'ACTIVE' && (
+            <button
+              onClick={handleCheckNow}
+              disabled={checking}
+              className="text-label text-white/40 hover:text-white/80 disabled:opacity-50"
+              style={{ fontSize: '0.6rem' }}
+            >
+              {checking ? 'Checking…' : 'Check now'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

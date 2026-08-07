@@ -1,4 +1,4 @@
-// Ripple Travel Intelligence Engine — data model
+// Maestravl Travel Intelligence Engine — data model
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 //
 // NOTE: enum-like status/type fields below are plain Strings holding one of
@@ -33,22 +33,34 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  trips Trip[]
+  trips       Trip[]
+  resetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique // SHA-256 hex of the raw token — the raw token is only ever in the emailed link
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 }
 
 model Trip {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title  String
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
   /// UPCOMING | ACTIVE | COMPLETED | CANCELLED
   status    String   @default("UPCOMING")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  passengers Passenger[]
-  segments   Segment[]
-  documents  Document[]
+  passengers       Passenger[]
+  segments         Segment[]
+  documents        Document[]
+  notificationLogs NotificationLog[]
 }
 
 model Passenger {
@@ -91,11 +103,11 @@ model Segment {
   sourceDocument   Document? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
   sourceDocumentId String?
 
-  order Int
+  order         Int
   /// FLIGHT | TRAIN | BUS | TAXI | FERRY | CRUISE | BOAT | HELICOPTER | BICYCLE | RENTAL_CAR | WALKING | HOTEL | RESTAURANT | EXCURSION | OTHER
   transportType String
   /// SCHEDULED | BOARDING | DEPARTED | DELAYED | CANCELLED | ARRIVED | COMPLETED
-  status String @default("SCHEDULED")
+  status        String @default("SCHEDULED")
 
   provider           String? // airline / train operator / hotel brand / restaurant name
   identifier         String? // flight/train/bus number
@@ -129,8 +141,9 @@ model Segment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  passengerLinks SegmentPassenger[]
-  monitoring     MonitoringRecord?
+  passengerLinks   SegmentPassenger[]
+  monitoring       MonitoringRecord?
+  notificationLogs NotificationLog[]
 }
 
 model SegmentPassenger {
@@ -150,8 +163,8 @@ model MonitoringRecord {
   segmentId String  @unique
   segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
 
-  apiProvider String? // which adapter/provider is responsible, e.g. "flight-adapter-v1"
-  trackingKey String? // provider-specific unique key for this segment
+  apiProvider   String? // which adapter/provider is responsible, e.g. "flight-adapter-v1"
+  trackingKey   String? // provider-specific unique key for this segment
   /// NOT_CONFIGURED | ACTIVE | PAUSED | ERROR
   status        String    @default("NOT_CONFIGURED")
   lastCheckedAt DateTime?
@@ -161,4 +174,28 @@ model MonitoringRecord {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One row per passenger notified about a monitored status change — the log
+// that will later back "Maestravl rescheduled this on your behalf" history.
+model NotificationLog {
+  id        String  @id @default(cuid())
+  tripId    String
+  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  segmentId String
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  /// MonitoringCheckStatus values, e.g. ON_TIME | DELAYED | CANCELLED | BOARDING | DEPARTED | ARRIVED
+  previousStatus String?
+  newStatus      String
+
+  /// EMAIL | NONE (NONE = no recipient email on file, logged but not sent)
+  channel        String  @default("EMAIL")
+  recipientEmail String?
+  recipientName  String?
+  subject        String?
+  success        Boolean @default(false)
+  errorMessage   String?
+
+  createdAt DateTime @default(now())
 }

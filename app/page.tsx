@@ -1,5 +1,5 @@
-import RippleLandingClient from './components/RippleLandingClient'
+import MaestravlLandingClient from './components/MaestravlLandingClient'
 
-export default function RipplePage() {
-  return <RippleLandingClient />
+export default function MaestravlPage() {
+  return <MaestravlLandingClient />
 }

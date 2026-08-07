@@ -1,7 +1,7 @@
 'use client'
 import { motion, useTransform } from 'framer-motion'
 import type { SceneProps } from '../ScrollStage'
-import RippleMark from '../RippleMark'
+import MaestravlMark from '../MaestravlMark'
 
 export default function Scene6OneMessage({ progress }: SceneProps) {
   const phoneY = useTransform(progress, [0.1, 0.5], [60, 0])
@@ -36,10 +36,10 @@ export default function Scene6OneMessage({ progress }: SceneProps) {
             {/* Phone header */}
             <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/10">
               <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                <RippleMark size={16} rings={false} />
+                <MaestravlMark size={16} />
               </div>
               <div>
-                <p className="text-editorial text-white font-medium" style={{ fontSize: '0.85rem' }}>Ripple</p>
+                <p className="text-editorial text-white font-medium" style={{ fontSize: '0.85rem' }}>Maestravl</p>
                 <p className="text-label text-white/40" style={{ fontSize: '0.6rem' }}>Travel Coordinator</p>
               </div>
               <div className="ml-auto">
@@ -59,7 +59,7 @@ export default function Scene6OneMessage({ progress }: SceneProps) {
                 Your driver is rescheduled for 17:30. Hotel extended your check-in. Tomorrow's excursion is confirmed. Dinner moved to 20:30.
               </p>
               <p className="text-editorial text-white/40 mt-3" style={{ fontSize: '0.75rem' }}>
-                — Ripple, 14:42
+                — Maestravl, 14:42
               </p>
             </motion.div>
           </div>

@@ -3,16 +3,16 @@ import { motion, useTransform, MotionValue } from 'framer-motion'
 import type { SceneProps } from '../ScrollStage'
 
 const STATS = [
-  { number: '0', unit: 'phone calls', caption: 'Ripple handles coordination autonomously' },
+  { number: '0', unit: 'phone calls', caption: 'Maestravl handles coordination autonomously' },
   { number: '100%', unit: 'stakeholders notified', caption: 'Every party updated in real time' },
   { number: '< 30s', unit: 'response time', caption: 'From disruption detected to plans updated' },
-  { number: '24/7', unit: 'availability', caption: 'Ripple never sleeps, never misses a change' },
+  { number: '24/7', unit: 'availability', caption: 'Maestravl never sleeps, never misses a change' },
 ]
 
 const FEATURES = [
-  { title: 'Autonomous Coordination', desc: 'Ripple detects disruptions and coordinates every affected party without human intervention.' },
+  { title: 'Autonomous Coordination', desc: 'Maestravl detects disruptions and coordinates every affected party without human intervention.' },
   { title: 'Real-Time Updates', desc: 'Every stakeholder receives accurate information the moment circumstances change.' },
-  { title: 'Smart Alternatives', desc: 'When a plan fails, Ripple finds and confirms alternatives before you even notice.' },
+  { title: 'Smart Alternatives', desc: 'When a plan fails, Maestravl finds and confirms alternatives before you even notice.' },
   { title: 'One Intelligent Layer', desc: 'Hotels, drivers, restaurants, excursions — all coordinated through a single system.' },
 ]
 
@@ -44,7 +44,7 @@ function FeatureCard({ feature, index, beatProgress }: { feature: typeof FEATURE
   )
 }
 
-export default function Scene9WhyRipple({ progress }: SceneProps) {
+export default function Scene9WhyMaestravl({ progress }: SceneProps) {
   const statsOpacity = useTransform(progress, [0, 0.06, 0.42, 0.5], [0, 1, 1, 0])
   const featuresOpacity = useTransform(progress, [0.5, 0.56, 1], [0, 1, 1])
   const statsBeat = useTransform(progress, [0, 0.5], [0, 1])
@@ -54,7 +54,7 @@ export default function Scene9WhyRipple({ progress }: SceneProps) {
     <div className="absolute inset-0 overflow-hidden" style={{ background: 'var(--charcoal)' }}>
       {/* Beat A: stats */}
       <motion.div className="absolute inset-0 flex flex-col items-center justify-center px-6" style={{ opacity: statsOpacity }}>
-        <p className="text-label text-white/40 mb-4">why ripple wins</p>
+        <p className="text-label text-white/40 mb-4">why maestravl wins</p>
         <h2 className="text-display text-white text-center mb-10" style={{ fontSize: 'clamp(2rem, 6vw, 4.5rem)', lineHeight: 1 }}>
           Coordination<br />
           <span style={{ color: 'var(--sand)' }}>without chaos.</span>
@@ -68,7 +68,7 @@ export default function Scene9WhyRipple({ progress }: SceneProps) {
 
       {/* Beat B: features */}
       <motion.div className="absolute inset-0 flex flex-col items-center justify-center px-6" style={{ opacity: featuresOpacity }}>
-        <p className="text-label text-white/40 mb-8">why ripple wins</p>
+        <p className="text-label text-white/40 mb-8">why maestravl wins</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl w-full">
           {FEATURES.map((f, i) => (
             <FeatureCard key={f.title} feature={f} index={i} beatProgress={featuresBeat} />

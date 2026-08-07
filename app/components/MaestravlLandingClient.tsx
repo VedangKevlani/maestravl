@@ -5,7 +5,7 @@ import ScrollStage from './ScrollStage'
 import Scene10Closing from './scenes/Scene10Closing'
 import BackToTop from './BackToTop'
 
-export default function RippleLandingClient() {
+export default function MaestravlLandingClient() {
   useLenis()
 
   return (

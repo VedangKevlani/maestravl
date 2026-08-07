@@ -1,0 +1,19 @@
+name: Monitoring cron
+
+# Vercel Hobby restricts cron job frequency more than this app needs, so
+# GitHub Actions is the primary trigger for /api/cron/monitoring — see
+# docs/INTEGRATION.md. vercel.json's own cron entry still runs as a backup,
+# at whatever cadence Hobby allows.
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger monitoring check
+        run: |
+          curl -sf -X GET "https://maestravl.vercel.app/api/cron/monitoring" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

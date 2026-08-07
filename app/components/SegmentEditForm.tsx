@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import type { SegmentDTO } from './types'
+import type { PassengerDTO, SegmentDTO } from './types'
 
 const fieldClass = 'glass-card px-3.5 py-2.5 text-editorial text-white bg-transparent outline-none w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 const labelClass = 'text-label text-white/40'
@@ -12,7 +12,8 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function SegmentEditForm({ segment, onDone, onCancel }: { segment: SegmentDTO; onDone: () => void; onCancel: () => void }) {
+export default function SegmentEditForm({ segment, passengers, onDone, onCancel }: { segment: SegmentDTO; passengers: PassengerDTO[]; onDone: () => void; onCancel: () => void }) {
+  const [passengerIds, setPassengerIds] = useState<string[]>(segment.passengerIds)
   const [form, setForm] = useState({
     provider: segment.provider ?? '',
     identifier: segment.identifier ?? '',
@@ -43,7 +44,7 @@ export default function SegmentEditForm({ segment, onDone, onCancel }: { segment
     setSaving(true)
     setError(null)
 
-    const payload: Record<string, unknown> = {}
+    const payload: Record<string, unknown> = { passengerIds }
     for (const [k, v] of Object.entries(form)) {
       if (k === 'departureTime' || k === 'arrivalTime') payload[k] = v ? new Date(v).toISOString() : null
       else if (k === 'price') payload[k] = v ? parseFloat(v) : null
@@ -131,6 +132,28 @@ export default function SegmentEditForm({ segment, onDone, onCancel }: { segment
         <span className={labelClass}>Notes</span>
         <textarea className={fieldClass} rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
       </label>
+
+      <div className="flex flex-col gap-1.5">
+        <span className={labelClass}>Notify on status change</span>
+        {passengers.length === 0 ? (
+          <p className="text-editorial text-white/40" style={{ fontSize: '0.82rem' }}>No passengers on this trip yet — add one above first.</p>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {passengers.map((p) => (
+              <label key={p.id} className="flex items-center gap-1.5 text-editorial text-white/70" style={{ fontSize: '0.82rem' }}>
+                <input
+                  type="checkbox"
+                  checked={passengerIds.includes(p.id)}
+                  onChange={(e) =>
+                    setPassengerIds((ids) => (e.target.checked ? [...ids, p.id] : ids.filter((id) => id !== p.id)))
+                  }
+                />
+                {p.name}{!p.email && <span className="text-white/30"> (no email on file)</span>}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
 
       {error && <p role="alert" className="text-editorial text-red-400" style={{ fontSize: '0.85rem' }}>{error}</p>}
 

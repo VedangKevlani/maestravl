@@ -1,6 +1,7 @@
 'use client'
 import { useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import Link from 'next/link'
 
 export default function Scene10Closing() {
   const ref = useRef<HTMLDivElement>(null)
@@ -56,7 +57,7 @@ export default function Scene10Closing() {
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.7 }}
         >
-          Ripple is building the coordination layer for Caribbean tourism — and beyond. Join us.
+          Maestravl is building the coordination layer for Caribbean tourism — and beyond. Join us.
         </motion.p>
 
         <motion.div
@@ -66,8 +67,8 @@ export default function Scene10Closing() {
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.9 }}
         >
-          <a
-            href="mailto:hello@ripple.travel"
+          <Link
+            href="/signup"
             className="px-10 py-4 rounded-full text-editorial font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg"
             style={{
               background: 'var(--warm-white)',
@@ -77,9 +78,9 @@ export default function Scene10Closing() {
             }}
           >
             Join the Future of Tourism
-          </a>
+          </Link>
           <a
-            href="mailto:operators@ripple.travel"
+            href="mailto:operators@maestravl.com"
             className="px-10 py-4 rounded-full text-editorial transition-all duration-300 hover:bg-white/10"
             style={{
               border: '1px solid rgba(255,255,255,0.2)',
@@ -93,7 +94,7 @@ export default function Scene10Closing() {
 
         {/* Footer */}
         <div className="absolute bottom-8 left-0 right-0 flex justify-center">
-          <p className="text-label text-white/32">© {new Date().getFullYear()} Ripple Technologies · Caribbean</p>
+          <p className="text-label text-white/32">© {new Date().getFullYear()} Maestravl Technologies · Caribbean</p>
         </div>
       </div>
     </section>

@@ -1,6 +1,7 @@
 'use client'
 import { motion } from 'framer-motion'
-import RippleMark from './RippleMark'
+import Link from 'next/link'
+import MaestravlMark from './MaestravlMark'
 
 export default function SiteHeader() {
   return (
@@ -13,15 +14,15 @@ export default function SiteHeader() {
         className="pointer-events-auto flex items-center gap-2.5"
         initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8, duration: 0.6 }}
       >
-        <RippleMark size={22} rings={false} />
-        <span className="text-label text-white/78" style={{ fontSize: '0.8rem', letterSpacing: '0.16em' }}>RIPPLE</span>
+        <MaestravlMark size={22} />
+        <span className="text-label text-white/78" style={{ fontSize: '0.8rem', letterSpacing: '0.16em' }}>MAESTRAVL</span>
       </motion.div>
       <motion.div
         className="pointer-events-auto"
         initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2, duration: 0.6 }}
       >
-        <a
-          href="#contact"
+        <Link
+          href="/signup"
           className="text-label inline-flex items-center rounded-full transition-all duration-300 hover:bg-white/10"
           style={{
             fontSize: '0.68rem',
@@ -31,7 +32,7 @@ export default function SiteHeader() {
           }}
         >
           Join Early Access
-        </a>
+        </Link>
       </motion.div>
     </div>
   )

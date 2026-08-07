@@ -1,7 +1,7 @@
 /**
  * Curated subset of IATA airport codes. IATA codes are public identifiers
  * (not proprietary data), so this dictionary is free to embed and extend.
- * Weighted toward major global hubs + the Caribbean, matching Ripple's focus.
+ * Weighted toward major global hubs + the Caribbean, matching Maestravl's focus.
  * For broader coverage later, this can be swapped for the free/open
  * openflights.org airports.dat without changing any calling code.
  */

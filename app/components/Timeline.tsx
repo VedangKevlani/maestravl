@@ -6,9 +6,9 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import SegmentCard from './SegmentCard'
-import type { SegmentDTO } from './types'
+import type { PassengerDTO, SegmentDTO } from './types'
 
-export default function Timeline({ tripId, segments }: { tripId: string; segments: SegmentDTO[] }) {
+export default function Timeline({ tripId, segments, passengers }: { tripId: string; segments: SegmentDTO[]; passengers: PassengerDTO[] }) {
   const router = useRouter()
   const [items, setItems] = useState(segments)
   const [saving, setSaving] = useState(false)
@@ -54,7 +54,7 @@ export default function Timeline({ tripId, segments }: { tripId: string; segment
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">
             {items.map((segment) => (
-              <SegmentCard key={segment.id} segment={segment} />
+              <SegmentCard key={segment.id} segment={segment} passengers={passengers} />
             ))}
           </div>
         </SortableContext>

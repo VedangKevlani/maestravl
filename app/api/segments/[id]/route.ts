@@ -37,6 +37,7 @@ const UpdateSegmentSchema = z.object({
   price: z.number().nonnegative().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
   baggageInfo: z.string().trim().max(500).nullable().optional(),
+  passengerIds: z.array(z.string()).optional(),
 })
 
 async function findOwnedSegment(segmentId: string, userId: string) {
@@ -72,7 +73,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (key in confidenceScores) delete confidenceScores[key]
   }
 
-  const updateData: Record<string, unknown> = { ...data, confidenceScores: JSON.stringify(confidenceScores) }
+  const { passengerIds, ...segmentFields } = data
+  const updateData: Record<string, unknown> = { ...segmentFields, confidenceScores: JSON.stringify(confidenceScores) }
   if ('departureTime' in data) updateData.departureTime = data.departureTime ? new Date(data.departureTime) : null
   if ('arrivalTime' in data) updateData.arrivalTime = data.arrivalTime ? new Date(data.arrivalTime) : null
 
@@ -80,6 +82,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if (data.transportType && data.transportType !== existing.transportType) {
     await initializeMonitoringForSegment(segment.id)
+  }
+
+  if (passengerIds) {
+    // Only link passengers that actually belong to this segment's trip.
+    const validPassengers = await prisma.passenger.findMany({
+      where: { tripId: existing.tripId, id: { in: passengerIds } },
+      select: { id: true },
+    })
+    await prisma.$transaction([
+      prisma.segmentPassenger.deleteMany({ where: { segmentId: id } }),
+      prisma.segmentPassenger.createMany({
+        data: validPassengers.map((p) => ({ segmentId: id, passengerId: p.id })),
+      }),
+    ])
   }
 
   return NextResponse.json({ segment })

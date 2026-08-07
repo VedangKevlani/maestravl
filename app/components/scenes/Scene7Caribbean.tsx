@@ -33,7 +33,7 @@ function PersonCard({ person, index, progress }: { person: typeof PEOPLE[0]; ind
         <p className="text-label text-white/38 mt-1" style={{ fontSize: '0.6rem' }}>{person.location}</p>
         <div className="mt-3 pt-3 border-t border-white/5">
           <p className="text-editorial text-white/50" style={{ fontSize: '0.78rem' }}>
-            Now receives updates automatically via Ripple
+            Now receives updates automatically via Maestravl
           </p>
         </div>
       </div>
@@ -63,7 +63,7 @@ export default function Scene7Caribbean({ progress }: SceneProps) {
           style={{ fontSize: '1.05rem', maxWidth: '36ch' }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2, duration: 0.6 }}
         >
-          Every stakeholder in Caribbean tourism carries the weight of coordinating alone. Ripple changes that.
+          Every stakeholder in Caribbean tourism carries the weight of coordinating alone. Maestravl changes that.
         </motion.p>
 
         {/* People cards with video clips */}

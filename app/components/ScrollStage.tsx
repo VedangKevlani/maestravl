@@ -3,26 +3,26 @@ import { useRef, useState, useEffect, type ComponentType } from 'react'
 import { motion, AnimatePresence, useScroll, useTransform, MotionValue } from 'framer-motion'
 import Scene1Silence from './scenes/Scene1Silence'
 import Scene2Moment from './scenes/Scene2Moment'
-import Scene3RippleEffect from './scenes/Scene3RippleEffect'
+import Scene3CascadeEffect from './scenes/Scene3CascadeEffect'
 import Scene4Chaos from './scenes/Scene4Chaos'
-import Scene5RippleAppears from './scenes/Scene5RippleAppears'
+import Scene5MaestravlAppears from './scenes/Scene5MaestravlAppears'
 import Scene6OneMessage from './scenes/Scene6OneMessage'
 import Scene7Caribbean from './scenes/Scene7Caribbean'
 import Scene8Technology from './scenes/Scene8Technology'
-import Scene9WhyRipple from './scenes/Scene9WhyRipple'
+import Scene9WhyMaestravl from './scenes/Scene9WhyMaestravl'
 
 export type SceneProps = { progress: MotionValue<number> }
 
 const SCENES: { Component: ComponentType<SceneProps>; weight: number }[] = [
   { Component: Scene1Silence, weight: 130 },
   { Component: Scene2Moment, weight: 150 },
-  { Component: Scene3RippleEffect, weight: 160 },
+  { Component: Scene3CascadeEffect, weight: 160 },
   { Component: Scene4Chaos, weight: 150 },
-  { Component: Scene5RippleAppears, weight: 160 },
+  { Component: Scene5MaestravlAppears, weight: 160 },
   { Component: Scene6OneMessage, weight: 140 },
   { Component: Scene7Caribbean, weight: 150 },
   { Component: Scene8Technology, weight: 150 },
-  { Component: Scene9WhyRipple, weight: 280 },
+  { Component: Scene9WhyMaestravl, weight: 280 },
 ]
 
 const TOTAL_WEIGHT = SCENES.reduce((sum, s) => sum + s.weight, 0)

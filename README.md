@@ -1,4 +1,4 @@
-# Ripple — The Autonomous Coordination Platform for Tourism
+# Maestravl — The Autonomous Coordination Platform for Tourism
 
 A cinematic, scroll-driven marketing site (`/`) plus a working **Travel
 Intelligence Engine** (`/dashboard`, `/trips/*`) — itinerary upload, OCR +
@@ -64,13 +64,13 @@ app/
     scenes/          # 10 cinematic scenes
       Scene1Silence.tsx       — Opening: airport, "one delay changes everything"
       Scene2Moment.tsx        — The disruption: departure board changes status
-      Scene3RippleEffect.tsx  — Cascade: every stakeholder affected
-      Scene4Chaos.tsx         — Disorder: cards scatter, coordination fails
-      Scene5RippleAppears.tsx — Resolution: Ripple logo + notification cascade
-      Scene6OneMessage.tsx    — Climax: "Everything has been handled."
-      Scene7Caribbean.tsx     — The people: real Caribbean stakeholders
-      Scene8Technology.tsx    — Interactive coordination graph
-      Scene9WhyRipple.tsx     — Stats and features
+      Scene3CascadeEffect.tsx     — Cascade: every stakeholder affected
+      Scene4Chaos.tsx             — Disorder: cards scatter, coordination fails
+      Scene5MaestravlAppears.tsx  — Resolution: Maestravl logo + notification cascade
+      Scene6OneMessage.tsx        — Climax: "Everything has been handled."
+      Scene7Caribbean.tsx         — The people: real Caribbean stakeholders
+      Scene8Technology.tsx        — Interactive coordination graph
+      Scene9WhyMaestravl.tsx      — Stats and features
       Scene10Closing.tsx      — Cinematic CTA with sunrise backdrop
   hooks/
     useLenis.ts      — Smooth scrolling setup
@@ -154,8 +154,9 @@ Scene mapping:
 Postgres) — see the Travel Intelligence Engine section above.
 
 Still ahead — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for specifics:
-- **Live monitoring** — flight/train/bus/ferry status providers (adapters
-  are stubbed and ready, just need an API key + the fetch call filled in)
+- **Live monitoring** — flight status is connected (AviationStack); train/bus/
+  ferry adapters are still stubbed, just need an API key + the fetch call
+  filled in
 - **Realtime** — push status changes to the dashboard as monitoring checks land
 - **Operator Portal** — new route `app/operators/`
 - **Payments** — Stripe at `app/api/checkout/`

@@ -3,7 +3,7 @@ import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import RippleMark from '../components/RippleMark'
+import MaestravlMark from '../components/MaestravlMark'
 
 function LoginForm() {
   const router = useRouter()
@@ -38,7 +38,12 @@ function LoginForm() {
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="text-label text-white/50">Password</label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="password" className="text-label text-white/50">Password</label>
+          <Link href="/forgot-password" className="text-label text-white/40 hover:text-white/70" style={{ fontSize: '0.7rem' }}>
+            Forgot password?
+          </Link>
+        </div>
         <input
           id="password" type="password" required autoComplete="current-password" value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -64,7 +69,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
       <div className="mb-8 flex flex-col items-center gap-3">
-        <RippleMark size={40} rings={false} />
+        <MaestravlMark size={40} />
         <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Welcome back</h1>
       </div>
       <Suspense>

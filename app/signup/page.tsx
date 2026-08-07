@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import RippleMark from '../components/RippleMark'
+import MaestravlMark from '../components/MaestravlMark'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -44,7 +44,7 @@ export default function SignupPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
       <div className="mb-8 flex flex-col items-center gap-3">
-        <RippleMark size={40} rings={false} />
+        <MaestravlMark size={40} />
         <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Create your account</h1>
       </div>
       <form onSubmit={onSubmit} className="w-full max-w-sm flex flex-col gap-4">

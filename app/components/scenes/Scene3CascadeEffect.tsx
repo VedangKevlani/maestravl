@@ -36,9 +36,9 @@ function StakeholderRow({ progress, index, icon, label }: { progress: MotionValu
   )
 }
 
-export default function Scene3RippleEffect({ progress }: SceneProps) {
-  const rippleScale = useTransform(progress, [0.05, 0.4], [0, 1])
-  const rippleOpacity = useTransform(progress, [0.05, 0.2, 0.45], [0, 1, 0])
+export default function Scene3CascadeEffect({ progress }: SceneProps) {
+  const cascadeScale = useTransform(progress, [0.05, 0.4], [0, 1])
+  const cascadeOpacity = useTransform(progress, [0.05, 0.2, 0.45], [0, 1, 0])
 
   return (
     <div className="absolute inset-0 overflow-hidden">
@@ -46,7 +46,7 @@ export default function Scene3RippleEffect({ progress }: SceneProps) {
 
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6">
         <motion.p className="text-label text-white/40 mb-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2, duration: 0.6 }}>
-          the ripple effect
+          the cascade effect
         </motion.p>
         <motion.h2
           className="text-display text-center text-white mb-16"
@@ -57,9 +57,9 @@ export default function Scene3RippleEffect({ progress }: SceneProps) {
           <span style={{ color: 'var(--sand)' }}>Every connection.</span>
         </motion.h2>
 
-        {/* Ripple SVG visualization */}
+        {/* Cascade visualization */}
         <div className="relative w-full max-w-2xl" style={{ height: '420px' }}>
-          {/* Center ripple rings */}
+          {/* Center cascade rings */}
           <div className="absolute" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
             {[1, 2, 3].map((i) => (
               <motion.div
@@ -70,8 +70,8 @@ export default function Scene3RippleEffect({ progress }: SceneProps) {
                   height: i * 110,
                   top: -(i * 55),
                   left: -(i * 55),
-                  scale: rippleScale,
-                  opacity: rippleOpacity,
+                  scale: cascadeScale,
+                  opacity: cascadeOpacity,
                 }}
               />
             ))}

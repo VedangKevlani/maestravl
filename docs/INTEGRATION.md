@@ -6,23 +6,74 @@ data, no paid API assumed). Each section says exactly what to change.
 
 ## Connecting live flight monitoring
 
-`lib/monitoring/adapters/flightAdapter.ts` is a stub. To connect a real
-provider:
+`lib/monitoring/adapters/flightAdapter.ts` is connected to **AviationStack**
+(free tier: 100 requests/month, then paid — real flight status, delays,
+gates). Set `FLIGHT_MONITORING_API_KEY=...` in `.env` to your AviationStack
+`access_key` to turn it on; the adapter reports `UNKNOWN` with a "not
+connected yet" message until the key is present. Note the free tier only
+serves over plain HTTP — the adapter uses `http://api.aviationstack.com`
+accordingly; switch it to `https://` if the key is upgraded to a paid plan.
 
-1. Pick a provider. Realistic options, cheapest first:
-   - **OpenSky Network** (free, no key for low-volume anonymous use) — gives
-     raw ADS-B position data, not commercial delay/gate status. Good for a
-     "is this aircraft airborne/landed" signal, not full status.
-   - **AviationStack** (free tier: 100 requests/month, then paid) — real
-     flight status, delays, gates.
-   - **FlightAware AeroAPI** (paid, but the most complete commercial data).
-2. Set the adapter's env var, e.g. `FLIGHT_MONITORING_API_KEY=...` in `.env`.
-3. In `flightAdapter.ts` (or rather `adapters/stubAdapter.ts`'s `check()`
-   override for flights), replace the `TODO` with a `fetch()` call using
-   `buildTrackingKey(segment)` (currently `IDENTIFIER:YYYY-MM-DD`) to look up
-   the flight, and map the response onto `MonitoringCheckResult`.
-4. Nothing else changes — `lib/monitoring/service.ts` and the registry
-   already call `adapter.check()` uniformly.
+**Free-tier gotcha:** the `flight_date` query param (looking up a flight on
+a specific date) 403s on the free plan with `function_access_restricted` —
+it's a paid-plan-only feature. The adapter queries by `flight_iata` alone
+instead and picks the result matching the segment's departure date
+client-side, since a flight number can recur daily. This means a flight
+number with no result on the current "live window" AviationStack returns
+(it doesn't serve arbitrary past/future dates on the free tier either) will
+still come back `UNKNOWN` even with a valid key.
+
+Other realistic options if you want to swap providers later:
+- **OpenSky Network** (free, no key for low-volume anonymous use) — gives
+  raw ADS-B position data, not commercial delay/gate status. Good for a
+  "is this aircraft airborne/landed" signal, not full status.
+- **FlightAware AeroAPI** (paid, but the most complete commercial data).
+
+## Scheduled monitoring checks
+
+`lib/monitoring/service.ts` computes a `nextCheckAt` (6h out — see the
+`CHECK_INTERVAL_MS` comment there for the quota math) each time a segment is
+checked, but nothing calls `runMonitoringCheck` automatically — something
+external has to hit `GET /api/cron/monitoring` on a schedule with header
+`Authorization: Bearer $CRON_SECRET`. That route (via
+`runDueMonitoringChecks`) finds every actively-monitored segment whose
+`nextCheckAt` has passed and checks it.
+
+**Why 6 hours:** AviationStack's free tier is 100 requests/month *total*,
+not per segment. A single segment checked every 30 minutes alone burns
+~1,440 requests/month. At 6h intervals one segment costs ~120/month — still
+over budget with more than one or two segments active at once. Multi-user
+production use will need a paid AviationStack plan; adjust
+`CHECK_INTERVAL_MS` down once that's in place.
+
+**Wiring it up:** this app runs on Vercel Hobby, which has historically
+restricted cron job frequency more than a 6h schedule needs (Pro allows
+finer-grained crons). Rather than gamble on that, the primary trigger is
+`.github/workflows/monitoring-cron.yml` — a GitHub Actions scheduled
+workflow that `curl`s `https://maestravl.vercel.app/api/cron/monitoring`
+every 6 hours with `Authorization: Bearer $CRON_SECRET`. `vercel.json` still
+declares its own cron hitting the same route as a backup, at whatever
+cadence Hobby actually permits — harmless either way, since the route only
+acts on segments whose `nextCheckAt` has passed, so redundant calls no-op.
+
+To activate the GitHub Actions path:
+1. Add a repository secret named `CRON_SECRET` (GitHub repo → Settings →
+   Secrets and variables → Actions → New repository secret) with the same
+   value as `CRON_SECRET` in `.env`.
+2. Make sure the Vercel project itself has **all** the `.env` values set as
+   real environment variables (Vercel project → Settings → Environment
+   Variables) — `.env` is gitignored and never gets deployed, so production
+   won't have `CRON_SECRET`, `RESEND_API_KEY`, `FLIGHT_MONITORING_API_KEY`,
+   etc. until they're added there directly.
+3. You can fire it manually anytime from the repo's Actions tab
+   (`workflow_dispatch`) instead of waiting for the schedule, to confirm it
+   works end-to-end.
+
+Two honest caveats about GitHub Actions schedules: they're best-effort (can
+lag during high load on GitHub's side, sometimes by 10-15min), and GitHub
+auto-disables scheduled workflows after 60 days with no repo activity (any
+push resets the clock). For a real-user-facing feature, periodically check
+the Actions tab isn't silently disabled.
 
 ## Connecting live train/bus monitoring
 

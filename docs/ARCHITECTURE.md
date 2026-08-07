@@ -1,4 +1,4 @@
-# Ripple Travel Intelligence Engine — Architecture
+# Maestravl Travel Intelligence Engine — Architecture
 
 This document explains how the itinerary ingestion, editing, and monitoring
 system is put together, and why. It's the map for anyone (human or agent)

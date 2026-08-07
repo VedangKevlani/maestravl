@@ -145,8 +145,8 @@
   100% { transform: scale(2.5); opacity: 0; }
 }
 
-/* Ripple wave */
-@keyframes ripple-expand {
+/* Cascade wave */
+@keyframes cascade-expand {
   0% { transform: scale(0); opacity: 0.8; }
   100% { transform: scale(4); opacity: 0; }
 }

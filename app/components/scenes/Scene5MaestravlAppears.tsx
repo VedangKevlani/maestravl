@@ -1,7 +1,6 @@
 'use client'
 import { motion, useTransform, MotionValue } from 'framer-motion'
 import type { SceneProps } from '../ScrollStage'
-import RippleMark from '../RippleMark'
 
 const NOTIFICATIONS = [
   { icon: '✈', text: 'Flight rescheduled · 18:45', time: 'now', color: '#4aa0d8' },
@@ -30,7 +29,7 @@ function NotificationRow({ n, index, progress }: { n: typeof NOTIFICATIONS[0]; i
   )
 }
 
-export default function Scene5RippleAppears({ progress }: SceneProps) {
+export default function Scene5MaestravlAppears({ progress }: SceneProps) {
   const logoScale = useTransform(progress, [0.05, 0.25], [0.6, 1])
   const logoOpacity = useTransform(progress, [0.05, 0.2], [0, 1])
 
@@ -42,8 +41,7 @@ export default function Scene5RippleAppears({ progress }: SceneProps) {
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6 gap-10">
         {/* Logo appear */}
         <motion.div style={{ scale: logoScale, opacity: logoOpacity }} className="flex flex-col items-center gap-3 text-center">
-          <RippleMark size={44} rings={false} />
-          <span className="text-display text-white" style={{ fontSize: '2.75rem', letterSpacing: '-0.04em', lineHeight: 1 }}>ripple</span>
+          <img src="/maestravl-logo-dark.png" alt="Maestravl" style={{ height: 96, width: 'auto' }} />
           <p className="text-label text-white/40">Autonomous coordination</p>
         </motion.div>
 
