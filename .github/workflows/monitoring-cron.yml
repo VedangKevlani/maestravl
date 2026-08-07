@@ -4,9 +4,14 @@ name: Monitoring cron
 # GitHub Actions is the primary trigger for /api/cron/monitoring — see
 # docs/INTEGRATION.md. vercel.json's own cron entry still runs as a backup,
 # at whatever cadence Hobby allows.
+#
+# This runs every 30 minutes so segments close to departure (which
+# lib/monitoring/service.ts polls as often as every 30min) actually get
+# checked that often — the route itself is a no-op for any segment whose
+# nextCheckAt hasn't passed, so the extra invocations don't cost quota.
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch: {}
 
 jobs:

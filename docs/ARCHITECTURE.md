@@ -79,6 +79,8 @@ every transport type implements:
 ```
 MonitoringAdapter
   ├─ flightAdapter   (lib/monitoring/adapters/flightAdapter.ts)
+  │    └─ rotates across flight/aviationStack.ts, flight/aeroDataBox.ts —
+  │       see "Scheduled monitoring checks" in docs/INTEGRATION.md
   ├─ trainAdapter
   ├─ busAdapter
   ├─ boatAdapter     (covers ferry, cruise, boat)
@@ -87,7 +89,15 @@ MonitoringAdapter
 
 `lib/monitoring/registry.ts` maps a `TransportType` to its adapter. Adding a
 new provider or transport mode means writing one adapter and adding it to
-the registry — nothing else in the app changes.
+the registry — nothing else in the app changes. `flightAdapter` is itself a
+small rotator rather than a single provider: free-tier flight-status APIs
+cap out too low individually to cover more than a couple of trips a month,
+so it spreads checks across every *configured* provider in
+`lib/monitoring/adapters/flight/`, tracking spend per provider per calendar
+month in the `ProviderUsage` table and falling through to the next provider
+once one runs dry (or errors). Adding another provider means writing one
+`FlightProviderAdapter` (see `flight/types.ts`) and listing it in
+`flightAdapter.ts`'s `PROVIDERS` array.
 
 **Current status: none of these are connected to a live provider.** Each
 adapter's `isConfigured()` checks for an environment variable (e.g.

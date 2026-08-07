@@ -1,14 +1,39 @@
 import { prisma } from '@/lib/db'
 import { sendStatusChangeEmail } from '@/lib/email'
 import { getAdapterForTransportType } from './registry'
-import type { MonitorableSegment, MonitoringCheckResult } from './types'
+import type { MonitorableSegment, MonitoringCheckResult, MonitoringCheckStatus } from './types'
 import type { TransportType } from '@/lib/constants'
 
-// AviationStack's free tier caps out at 100 requests/month total — a 30min
-// interval alone burns ~1,440/month for a single segment. 6h keeps a single
-// segment to ~120/month; multiple concurrently-monitored segments will still
-// need a paid plan. See docs/INTEGRATION.md.
-const CHECK_INTERVAL_MS = 1000 * 60 * 60 * 6
+// AviationStack's free tier caps out at 100 requests/month total, so polling
+// scales with proximity to departure instead of a flat interval: most of a
+// segment's monitored life is spent far from departure, where a status
+// change is unlikely and cheap polling is fine; the hours right around
+// departure — where a delay/cancellation is both most likely and most
+// urgent to catch — get checked much more often. See docs/INTEGRATION.md
+// for the budget math.
+const FAR_INTERVAL_MS = 1000 * 60 * 60 * 12 // >72h to departure
+const NEAR_INTERVAL_MS = 1000 * 60 * 60 * 6 // 24-72h to departure
+const SOON_INTERVAL_MS = 1000 * 60 * 60 * 2 // 6-24h to departure
+const IMMINENT_INTERVAL_MS = 1000 * 60 * 30 // <=6h to departure, and in-flight
+
+// Once a segment has reached a terminal status (or departed so long ago it
+// almost certainly has) it stops costing quota — there's nothing left to
+// change that a passenger would need to hear about.
+const STALE_AFTER_DEPARTURE_MS = 1000 * 60 * 60 * 24
+
+function computeCheckIntervalMs(departureTime: Date | null): number {
+  if (!departureTime) return NEAR_INTERVAL_MS
+  const msToDeparture = departureTime.getTime() - Date.now()
+  if (msToDeparture <= 1000 * 60 * 60 * 6) return IMMINENT_INTERVAL_MS
+  if (msToDeparture <= 1000 * 60 * 60 * 24) return SOON_INTERVAL_MS
+  if (msToDeparture <= 1000 * 60 * 60 * 72) return NEAR_INTERVAL_MS
+  return FAR_INTERVAL_MS
+}
+
+function isMonitoringComplete(status: MonitoringCheckStatus, departureTime: Date | null) {
+  if (status === 'ARRIVED' || status === 'CANCELLED') return true
+  return Boolean(departureTime && Date.now() - departureTime.getTime() > STALE_AFTER_DEPARTURE_MS)
+}
 
 /** Called right after a segment is saved — sets up (or refreshes) its MonitoringRecord. */
 export async function initializeMonitoringForSegment(segmentId: string) {
@@ -53,7 +78,7 @@ export async function initializeMonitoringForSegment(segmentId: string) {
   return record
 }
 
-function segmentLabel(segment: { identifier: string | null; provider: string | null; departureLocationCode: string | null; arrivalLocationCode: string | null }) {
+export function segmentLabel(segment: { identifier: string | null; provider: string | null; departureLocationCode: string | null; arrivalLocationCode: string | null }) {
   const name = segment.identifier || segment.provider || 'Your trip segment'
   const route = segment.departureLocationCode && segment.arrivalLocationCode
     ? ` (${segment.departureLocationCode} → ${segment.arrivalLocationCode})`
@@ -164,7 +189,12 @@ export async function runMonitoringCheck(segmentId: string) {
   }
 
   const result = await adapter.check(monitorable)
-  const nextCheckAt = new Date(Date.now() + CHECK_INTERVAL_MS)
+  const nextCheckAt = new Date(Date.now() + computeCheckIntervalMs(segment.departureTime))
+  const status = !adapter.isConfigured()
+    ? 'NOT_CONFIGURED'
+    : isMonitoringComplete(result.status, segment.departureTime)
+      ? 'PAUSED'
+      : 'ACTIVE'
 
   const record = await prisma.monitoringRecord.upsert({
     where: { segmentId },
@@ -172,13 +202,13 @@ export async function runMonitoringCheck(segmentId: string) {
       segmentId,
       apiProvider: adapter.id,
       trackingKey: adapter.buildTrackingKey(monitorable),
-      status: adapter.isConfigured() ? 'ACTIVE' : 'NOT_CONFIGURED',
+      status,
       lastCheckedAt: result.checkedAt,
       nextCheckAt,
       lastKnownData: JSON.stringify(result),
     },
     update: {
-      status: adapter.isConfigured() ? 'ACTIVE' : 'NOT_CONFIGURED',
+      status,
       lastCheckedAt: result.checkedAt,
       nextCheckAt,
       lastKnownData: JSON.stringify(result),
@@ -199,6 +229,11 @@ export async function runMonitoringCheck(segmentId: string) {
  * passed. Meant to be called on a schedule (see app/api/cron/monitoring) —
  * sequential rather than parallel to stay gentle on rate-limited free-tier
  * provider quotas.
+ *
+ * Ordered by departure time (soonest first) rather than insertion order —
+ * when a run's combined provider quota is tight, whichever segment is
+ * closest to departure gets checked before one that's still days out,
+ * instead of losing out to whatever happened to be created first.
  */
 export async function runDueMonitoringChecks() {
   const due = await prisma.monitoringRecord.findMany({
@@ -207,6 +242,7 @@ export async function runDueMonitoringChecks() {
       OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: new Date() } }],
     },
     select: { segmentId: true },
+    orderBy: { segment: { departureTime: 'asc' } },
   })
 
   const results: { segmentId: string; ok: boolean; error?: string }[] = []

@@ -11,6 +11,10 @@ export interface MonitoringCheckResult {
   message?: string
   raw?: unknown
   checkedAt: Date
+  /** Which underlying provider actually answered this check — set by adapters (like the flight rotator) that can be backed by more than one API. */
+  provider?: string
+  /** Seconds until this provider's own rate-limit window resets, when it reports one (e.g. via a response header) — lets usage tracking use the provider's real window instead of a calendar-month guess. */
+  quotaResetSeconds?: number
 }
 
 export interface MonitorableSegment {

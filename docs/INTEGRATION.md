@@ -6,55 +6,128 @@ data, no paid API assumed). Each section says exactly what to change.
 
 ## Connecting live flight monitoring
 
-`lib/monitoring/adapters/flightAdapter.ts` is connected to **AviationStack**
-(free tier: 100 requests/month, then paid — real flight status, delays,
-gates). Set `FLIGHT_MONITORING_API_KEY=...` in `.env` to your AviationStack
-`access_key` to turn it on; the adapter reports `UNKNOWN` with a "not
-connected yet" message until the key is present. Note the free tier only
+`lib/monitoring/adapters/flightAdapter.ts` is a small **rotator**, not a
+single provider — it tries every *configured* provider in
+`lib/monitoring/adapters/flight/`, in priority order, and falls through to
+the next one once the current provider's free-tier quota for the calendar
+month is spent (or it errors). This exists because any one free flight-data
+tier is too small to cover more than a couple of trips a month on its own
+(see the budget math below) — combining two roughly quadruples the usable
+budget for zero cost.
+
+**Provider 1 — AviationStack** (`flight/aviationStack.ts`). Free tier: 100
+requests/month, then paid. Set `FLIGHT_MONITORING_API_KEY=...` in `.env` to
+your AviationStack `access_key` to turn it on. Note the free tier only
 serves over plain HTTP — the adapter uses `http://api.aviationstack.com`
 accordingly; switch it to `https://` if the key is upgraded to a paid plan.
-
 **Free-tier gotcha:** the `flight_date` query param (looking up a flight on
 a specific date) 403s on the free plan with `function_access_restricted` —
 it's a paid-plan-only feature. The adapter queries by `flight_iata` alone
 instead and picks the result matching the segment's departure date
-client-side, since a flight number can recur daily. This means a flight
-number with no result on the current "live window" AviationStack returns
-(it doesn't serve arbitrary past/future dates on the free tier either) will
-still come back `UNKNOWN` even with a valid key.
+client-side, since a flight number can recur daily.
 
-Other realistic options if you want to swap providers later:
-- **OpenSky Network** (free, no key for low-volume anonymous use) — gives
-  raw ADS-B position data, not commercial delay/gate status. Good for a
-  "is this aircraft airborne/landed" signal, not full status.
+**Provider 2 — AeroDataBox** (`flight/aeroDataBox.ts`), via RapidAPI. Free
+"Basic" plan: 600 API units/month, 1 request/second. Sign up at
+[rapidapi.com/aedbx-aedbx/api/aerodatabox](https://rapidapi.com/aedbx-aedbx/api/aerodatabox)
+(no card required for the free plan) and set `AERODATABOX_API_KEY=...` to
+your RapidAPI key. **Unverified field mapping:** this adapter was written
+against AeroDataBox's published docs, not a live response — if it's
+consistently returning `UNKNOWN` despite a valid key and remaining quota,
+log a raw `check()` result and check the field names in `aeroDataBox.ts`'s
+`mapStatus` against what's actually coming back. Also confirm the
+`unitsPerCall` assumption (currently 2, i.e. Tier 2 pricing) against your
+own RapidAPI dashboard after a few real calls — get it wrong and the
+rotator either under- or over-estimates how much budget is left.
+**RapidAPI's monthly reset date isn't documented precisely** (daily quotas
+reset on a rolling 24h from subscription time; monthly reset timing wasn't
+confirmed as calendar-month) — `ProviderUsage` assumes calendar-month
+buckets for both providers, which may drift from AeroDataBox's actual reset
+day. Worth double-checking once the account has real usage history.
+
+**Adding a third provider:** implement `FlightProviderAdapter` (see
+`flight/types.ts` — same shape as `MonitoringAdapter` plus `monthlyQuota`
+and `unitsPerCall`) and add it to the `PROVIDERS` array in
+`flightAdapter.ts`. Realistic candidates:
+- **OpenSky Network** (free; 400 credits/day anonymous, 4,000/day for a
+  free registered account) — gives raw ADS-B position data, not commercial
+  delay/gate status. Good for an "is this aircraft airborne/landed" signal
+  layered on top of the other two, not a drop-in replacement.
 - **FlightAware AeroAPI** (paid, but the most complete commercial data).
 
 ## Scheduled monitoring checks
 
-`lib/monitoring/service.ts` computes a `nextCheckAt` (6h out — see the
-`CHECK_INTERVAL_MS` comment there for the quota math) each time a segment is
-checked, but nothing calls `runMonitoringCheck` automatically — something
-external has to hit `GET /api/cron/monitoring` on a schedule with header
+`lib/monitoring/service.ts` computes each segment's own `nextCheckAt` after
+every check — see `computeCheckIntervalMs` there — but nothing calls
+`runMonitoringCheck` automatically — something external has to hit
+`GET /api/cron/monitoring` on a schedule with header
 `Authorization: Bearer $CRON_SECRET`. That route (via
 `runDueMonitoringChecks`) finds every actively-monitored segment whose
 `nextCheckAt` has passed and checks it.
 
-**Why 6 hours:** AviationStack's free tier is 100 requests/month *total*,
-not per segment. A single segment checked every 30 minutes alone burns
-~1,440 requests/month. At 6h intervals one segment costs ~120/month — still
-over budget with more than one or two segments active at once. Multi-user
-production use will need a paid AviationStack plan; adjust
-`CHECK_INTERVAL_MS` down once that's in place.
+**Polling cadence scales with proximity to departure**, rather than a flat
+interval, so quota is spent where a status change is actually likely and
+urgent:
+
+| Time to departure | Interval |
+| --- | --- |
+| >72h | every 12h |
+| 24-72h | every 6h |
+| 6-24h | every 2h |
+| ≤6h, and in-flight | every 30min |
+
+Once a segment reaches a terminal status (`ARRIVED`/`CANCELLED`), or it's
+been more than 24h since departure with no terminal status resolved,
+`MonitoringRecord.status` flips to `PAUSED` and `runDueMonitoringChecks`
+stops picking it up — there's nothing left worth spending quota on.
+
+**Why this shape:** a flat 30min interval for one segment alone burns
+~1,440 requests/month; a flat 6h interval costs ~120/month. Tiering means a
+segment spends most of its life (days out from departure) being checked
+cheaply, and only gets checked every 30min during the narrow window — a few
+hours before departure through landing — where a delay/cancellation
+actually matters. One segment's full lifecycle costs roughly ~40-50 requests
+this way.
+
+That per-segment cost is what makes a single free provider a hard ceiling:
+AviationStack alone (100/month) covers barely two segments a month before
+later trips get silently starved of checks — the quota gets claimed by
+whichever segment happens to poll first, not by whichever segment needs it
+most. Two things fix that, and both live in `flightAdapter.ts`:
+
+1. **Combined budget across providers.** AviationStack (100/month) +
+   AeroDataBox (~300/month, see above) gives roughly 400 requests/month
+   instead of 100 — enough for several concurrent trips rather than one or
+   two — for zero added cost, once `AERODATABOX_API_KEY` is set. See
+   "Connecting live flight monitoring" above for setup and caveats.
+2. **Usage is tracked per-provider, not pre-allocated per-segment, and spent
+   in departure order.** `runMonitoringCheck` doesn't reserve budget for a
+   segment in advance — every check queries `ProviderUsage` for what's
+   actually been spent this month and picks whichever provider still has
+   room. And `runDueMonitoringChecks` processes due segments soonest-
+   departure-first, so if a run's combined budget runs tight, whichever
+   segment is closest to departure gets checked before one that's still
+   days out, rather than losing out to whatever happened to be created
+   first. Multiple trips degrade gracefully together (checks get less
+   frequent for everyone as the month's combined budget runs low) instead
+   of the first trip getting full coverage and the rest getting none.
+
+None of this removes the hard ceiling — if several flights all cluster
+departure windows in the same week, the combined ~400/month can still run
+out — but it spends what's available where it matters and across
+whichever segments actually need it. Heavier multi-user production use
+will still need a paid plan on at least one provider.
 
 **Wiring it up:** this app runs on Vercel Hobby, which has historically
-restricted cron job frequency more than a 6h schedule needs (Pro allows
+restricted cron job frequency more than this app needs (Pro allows
 finer-grained crons). Rather than gamble on that, the primary trigger is
 `.github/workflows/monitoring-cron.yml` — a GitHub Actions scheduled
 workflow that `curl`s `https://maestravl.vercel.app/api/cron/monitoring`
-every 6 hours with `Authorization: Bearer $CRON_SECRET`. `vercel.json` still
+**every 30 minutes** with `Authorization: Bearer $CRON_SECRET`, so segments
+in the imminent tier actually get checked that often. `vercel.json` still
 declares its own cron hitting the same route as a backup, at whatever
 cadence Hobby actually permits — harmless either way, since the route only
-acts on segments whose `nextCheckAt` has passed, so redundant calls no-op.
+acts on segments whose `nextCheckAt` has passed, so redundant calls no-op
+and don't cost extra AviationStack quota.
 
 To activate the GitHub Actions path:
 1. Add a repository secret named `CRON_SECRET` (GitHub repo → Settings →

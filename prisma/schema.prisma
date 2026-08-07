@@ -176,6 +176,22 @@ model MonitoringRecord {
   updatedAt DateTime @updatedAt
 }
 
+// Tracks how much of each flight-status provider's free-tier quota has been
+// spent in the current window, so the monitoring rotator (see
+// lib/monitoring/adapters/flightAdapter.ts) knows when to fall through to
+// the next configured provider instead of running over quota. `resetAt` is
+// the window boundary — refreshed from the provider's own rate-limit
+// headers when it reports one (confirmed present on AeroDataBox, which
+// resets on a rolling ~31-day window rather than calendar month), and
+// otherwise defaulted to the next calendar-month boundary as a best guess.
+model ProviderUsage {
+  id        String   @id @default(cuid())
+  provider  String   @unique // adapter id, e.g. "aviationstack-flight-v1"
+  units     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+}
+
 // One row per passenger notified about a monitored status change — the log
 // that will later back "Maestravl rescheduled this on your behalf" history.
 model NotificationLog {
