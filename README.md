@@ -1,4 +1,4 @@
-# Ripple — The Autonomous Coordination Platform for Tourism
+# Maestravl — The Autonomous Coordination Platform for Tourism
 
 A cinematic, scroll-driven marketing site (`/`) plus a working **Travel
 Intelligence Engine** (`/dashboard`, `/trips/*`) — itinerary upload, OCR +
@@ -64,13 +64,13 @@ app/
     scenes/          # 10 cinematic scenes
       Scene1Silence.tsx       — Opening: airport, "one delay changes everything"
       Scene2Moment.tsx        — The disruption: departure board changes status
-      Scene3RippleEffect.tsx  — Cascade: every stakeholder affected
+      Scene3maestravlEffect.tsx  — Cascade: every stakeholder affected
       Scene4Chaos.tsx         — Disorder: cards scatter, coordination fails
-      Scene5RippleAppears.tsx — Resolution: Ripple logo + notification cascade
+      Scene5maestravlAppears.tsx — Resolution: maestravl logo + notification cascade
       Scene6OneMessage.tsx    — Climax: "Everything has been handled."
       Scene7Caribbean.tsx     — The people: real Caribbean stakeholders
       Scene8Technology.tsx    — Interactive coordination graph
-      Scene9WhyRipple.tsx     — Stats and features
+      Scene9Whymaestravl.tsx     — Stats and features
       Scene10Closing.tsx      — Cinematic CTA with sunrise backdrop
   hooks/
     useLenis.ts      — Smooth scrolling setup
