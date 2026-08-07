@@ -92,16 +92,26 @@ export const aeroDataBoxAdapter: FlightProviderAdapter = {
       return { status: 'UNKNOWN', message: `AeroDataBox request failed (${res.status})`, checkedAt: new Date(), quotaResetSeconds }
     }
 
+    // AeroDataBox responds 204 with an empty body when it has no record of
+    // this flight number at all (e.g. it only indexes the operating
+    // carrier's number, not every codeshare designator) — a valid "nothing
+    // here" answer, not a parse error.
+    if (res.status === 204) {
+      return { status: 'UNKNOWN', message: 'No flight found for this exact date', checkedAt: new Date(), quotaResetSeconds, noMatch: true }
+    }
+
     const body = await res.json()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const candidates: any[] = Array.isArray(body) ? body : []
     // A flight number recurs daily, so the endpoint returns every
     // occurrence near the requested date (e.g. one still landing from the
-    // day before, one departing today) — match departure date client-side
-    // rather than trusting result order.
-    const flight = candidates.find((f) => utcDateOf(f.departure?.scheduledTime) === date) ?? candidates[0]
+    // day before, one departing today) — only trust a result whose
+    // departure date exactly matches this trip. Falling back to an
+    // arbitrary candidate risks reporting a different day's status (e.g. a
+    // genuinely cancelled prior occurrence) for this trip.
+    const flight = candidates.find((f) => utcDateOf(f.departure?.scheduledTime) === date)
     if (!flight) {
-      return { status: 'UNKNOWN', message: 'No matching flight found for this number', checkedAt: new Date(), raw: body, quotaResetSeconds }
+      return { status: 'UNKNOWN', message: 'No flight found for this exact date', checkedAt: new Date(), raw: body, quotaResetSeconds, noMatch: true }
     }
 
     const delayMinutes =

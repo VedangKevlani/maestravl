@@ -41,8 +41,17 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     setError(null)
+
+    for (const [key, label] of [['departureTime', 'Departure'], ['arrivalTime', 'Arrival']] as const) {
+      const v = form[key]
+      if (v && isNaN(new Date(v).getTime())) {
+        setError(`${label} time is not a valid date — please re-enter it.`)
+        return
+      }
+    }
+
+    setSaving(true)
 
     const payload: Record<string, unknown> = { passengerIds }
     for (const [k, v] of Object.entries(form)) {

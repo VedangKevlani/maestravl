@@ -15,6 +15,10 @@ export interface MonitoringCheckResult {
   provider?: string
   /** Seconds until this provider's own rate-limit window resets, when it reports one (e.g. via a response header) — lets usage tracking use the provider's real window instead of a calendar-month guess. */
   quotaResetSeconds?: number
+  /** Set when the provider responded successfully but had no data for this exact trip date (as opposed to being unconfigured, rate-limited, or erroring) — lets a multi-provider rotator distinguish "try the next provider, this one just doesn't have it" from a hard failure. */
+  noMatch?: boolean
+  /** When this segment's identifier is a codeshare/marketing flight number, the operating carrier's own flight number, if this provider's data revealed the mapping — lets a multi-provider rotator retry a provider that only indexes operating-carrier numbers. */
+  operatingIdentifier?: string
 }
 
 export interface MonitorableSegment {

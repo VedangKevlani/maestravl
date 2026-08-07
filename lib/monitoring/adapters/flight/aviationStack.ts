@@ -73,9 +73,31 @@ export const aviationStackAdapter: FlightProviderAdapter = {
     const targetDate = segment.departureTime.toISOString().slice(0, 10)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const candidates: any[] = body.data ?? []
-    const flight = candidates.find((f) => f.flight_date === targetDate) ?? candidates[0]
+    // A flight number recurs daily, so only trust a result whose
+    // flight_date exactly matches our trip — falling back to an arbitrary
+    // candidate risks reporting a different day's status (e.g. a genuinely
+    // cancelled prior occurrence) for this trip.
+    const flight = candidates.find((f) => f.flight_date === targetDate)
     if (!flight) {
-      return { status: 'UNKNOWN', message: 'No matching flight found for this number', checkedAt: new Date(), raw: body }
+      // A codeshare's marketing number (e.g. Etihad's "EY2828") may not be
+      // what other providers index — they often only carry the operating
+      // carrier's own number (e.g. ITA Airways' "AZ615"). AviationStack
+      // exposes that mapping even on a non-matching-date candidate, so pass
+      // it along for the rotator to retry the next provider with.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const operatingIdentifier: string | undefined = candidates
+        .map((f) => f.flight?.codeshared?.flight_iata as string | undefined)
+        .find((iata): iata is string => Boolean(iata))
+        ?.toUpperCase()
+
+      return {
+        status: 'UNKNOWN',
+        message: 'No flight found for this exact date',
+        checkedAt: new Date(),
+        raw: body,
+        noMatch: true,
+        operatingIdentifier,
+      }
     }
 
     const delayMinutes: number | undefined = flight.departure?.delay ?? flight.arrival?.delay ?? undefined
