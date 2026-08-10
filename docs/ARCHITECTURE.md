@@ -192,40 +192,106 @@ runMonitoringCheck (lib/monitoring/service.ts)
               → planAnalysis (lib/agents/analyze.ts) — pure: runs the
                 dependency engine, decides what's affected
               → logs one AgentAction per plan step
-              → affected segments exist? → sendDisruptionImpactEmail
-              → AgentRun.status -> COMPLETED | ACTION_REQUIRED
+              → nothing affected? → AgentRun.status -> COMPLETED
+              → something affected? → status -> CONTACTING, then per
+                affected segment:
+                  → findOrDiscoverContact (lib/agents/contact.ts)
+                  → logs FIND_CONTACT
+                  → usable email contact? → compose + send a request
+                    (lib/agents/message.ts + sendProviderEmail) → logs
+                    CONTACT_PROVIDER, creates Communication; a DIRECT
+                    impact with a concrete shiftedStart also creates a
+                    RescheduleRequest and logs REQUEST_RESCHEDULE
+                  → no usable contact? → logs ESCALATE
+              → sendDisruptionImpactEmail (one, summarizing every
+                affected segment and whether it was actually contacted)
+              → AgentRun.status -> WAITING_FOR_RESPONSE | ACTION_REQUIRED
 ```
 
 `classifyDisruption` filters out routine progression (ON_TIME → BOARDING →
 DEPARTED → ARRIVED) and short delays (< `DISRUPTION_DELAY_THRESHOLD_MINUTES`,
 30 by default) — those still get the existing plain status-change email,
-just no `Disruption`/`AgentRun`. A genuine delay or cancellation gets both:
-the plain status email, and — only if `planAnalysis` finds other segments
-actually affected — a second, richer email listing what's threatened and
-why (`sendDisruptionImpactEmail` in `lib/email.ts`).
+just no `Disruption`/`AgentRun`.
 
-**Honesty boundary (spec section 20):** `AgentRun` only ever reaches
-`COMPLETED` when there's genuinely nothing left to do (no downstream
-impact found). Any real impact lands the run in `ACTION_REQUIRED` and says
-so in the passenger email — Maestravl doesn't have contact-discovery or
-provider-communication yet, so it will not claim to have contacted anyone
-or requested a change it didn't actually request.
+**Contact discovery** (`lib/agents/contactDiscovery.ts` — pure — wrapped by
+`lib/agents/contact.ts` for persistence): per spec section 5, "the
+itinerary should be the first source of contact information." First scans
+text Maestravl already has — a segment's `notes` and its source document's
+`extractedRawText` — for email addresses, URLs, and phone numbers via
+regex, scoring confidence higher when a match sits near a keyword like
+"contact" or "reservations." Every match is persisted as a
+`ProviderContact` (source tagged `ITINERARY` or `BOOKING_CONFIRMATION`)
+even at low confidence, for audit purposes — but `isAutoContactable` only
+allows automatic contact for an `EMAIL` channel at confidence ≥
+`MIN_AUTO_CONTACT_CONFIDENCE` (70). Anything else (a bare phone number, a
+low-confidence email, a booking portal URL Maestravl can't submit a form
+to) gets recorded and escalated, never acted on.
+
+Only if that local search finds *nothing* — and only if `segment.provider`
+is known and `MINIMAX_API_KEY` is configured — does `findOrDiscoverContact`
+fall back to a web search via MiniMax's `web_search` Server Tool
+(`lib/agents/minimaxSearch.ts`, source tagged `WEB_LOOKUP`). This is the
+only one of the team's four existing resources (Boardy, MiniMax,
+OllyGarden, Nebius) that turned out to actually offer a search capability
+— Boardy is a networking agent, OllyGarden is an observability tool,
+Nebius is LLM inference hosting with no search/grounding product found.
+MiniMax's is a genuinely paid tool call (reported ~$0.01/request, beta),
+not a free-tier API — every other currently-marketed "free" search API was
+checked and ruled out as of Aug 2026 (Brave's free tier was discontinued
+Feb 2026; Google Custom Search JSON API is closed to new signups). A
+segment only ever triggers this once — a discovered contact (or the
+confirmed absence of one) is persisted and never re-searched.
+
+Web results get *rescaled* confidence, not trusted at face value —
+`discoverContactsInWebResults` only lets a result clear the
+auto-contactable threshold if its own domain plausibly matches the
+provider's name (a real, if weak, "official source" signal); anything from
+an unrelated domain — a booking aggregator mentioning the same email, for
+instance — is capped well under `MIN_AUTO_CONTACT_CONFIDENCE` regardless of
+how confident the text pattern itself looked, per spec section 5: "do not
+use suspicious third-party contact details when an official source is
+available."
+
+**Communication** (`lib/agents/message.ts` — pure templates, no LLM, same
+philosophy as the rest of this pipeline — sent via `sendProviderEmail` in
+`lib/email.ts`, the only real outbound channel this codebase has):
+`composeRescheduleRequest` asks for a specific new time (used when the
+dependency engine produced a `shiftedStart` — a DIRECT impact from a
+delay); `composeAwarenessInquiry` is a softer, non-committal heads-up used
+for a POTENTIAL impact or a cancellation's downstream segments, where
+there's no single new time to propose. Neither template ever uses
+confirmed/changed language — spec section 6: "Messages must NEVER claim
+something has been confirmed when it has only been requested."
+
+**Honesty boundary (spec section 20):** an `AgentRun` only reaches
+`WAITING_FOR_RESPONSE` when *every* affected segment actually got a
+request sent — a real `Communication` row with `status: 'SENT'`, not a
+best-effort attempt. If even one affected segment couldn't be contacted
+(no usable contact found, or the send failed), the run lands in
+`ACTION_REQUIRED` instead, and the passenger email says exactly which
+segments Maestravl reached out to and which it couldn't, rather than a
+blanket "handled" or "not handled." `COMPLETED` is reserved for the case
+where nothing downstream was affected at all.
 
 **Risk policy** (`lib/agents/policy.ts`): every `AgentAction` is classified
 LOW/MEDIUM/HIGH via `classifyActionRisk` before it's logged;
 `canAutoExecute` gates whether it runs immediately (`EXECUTED`) or stops
-for approval (`REQUIRES_APPROVAL`). Only `ANALYZE_IMPACT`/`VERIFY`/`ESCALATE`/
-`NOTIFY_PASSENGER` actions exist so far, all LOW — the MEDIUM/HIGH paths
-(a reschedule with a fee, a non-refundable cancellation) are implemented
-in the policy module already but have no caller yet, since nothing
-proposes a reschedule until the rescheduling agent exists.
+for approval (`REQUIRES_APPROVAL`). `CONTACT_PROVIDER`/`REQUEST_RESCHEDULE`
+are LOW at baseline (asking isn't committing — spec section 9's LOW list)
+but `logAction` accepts an explicit status override so a failed send is
+recorded as `FAILED`, not a policy-derived `EXECUTED`, regardless of risk
+tier — risk tier and real outcome are tracked separately on purpose. The
+MEDIUM/HIGH paths (a reschedule with a fee, a non-refundable cancellation)
+are implemented in the policy module but have no caller yet, since nothing
+proposes a reschedule *with a fee* until a provider's reply is processed.
 
-**Not yet built:** contact discovery, the communication agent (only
-passenger-facing email exists — nothing provider-facing), the
-rescheduling/alternatives agents, and the passenger-facing recovery
-timeline UI. `AgentRun.status` also doesn't yet have a `CONTACTING` /
-`WAITING_FOR_RESPONSE` / `RESCHEDULING` path — those states exist in the
-schema but nothing produces them yet.
+**Not yet built:** processing a provider's *reply* (nothing reads a
+response — a sent request just sits at `WAITING_FOR_RESPONSE` until a
+human checks manually), the alternatives-ranking agent (spec section 8 —
+right now there's exactly one proposed time per DIRECT impact, not a
+ranked set of options), and the passenger-facing recovery timeline UI.
+`AgentRun.status` also doesn't yet have a `RESCHEDULING` path — that's
+reserved for when a reply triggers an itinerary update.
 
 ## Known limitations (by design, for this iteration)
 

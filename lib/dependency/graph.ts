@@ -50,6 +50,8 @@ export interface SegmentImpact {
   level: SegmentImpactLevel
   /** Minutes between this segment's scheduled start and the disruption-shifted actual end of whatever precedes it. Negative means an outright conflict. Null when it couldn't be computed (missing schedule data). */
   bufferMinutes: number | null
+  /** The concrete new start time to propose to this segment's provider — only set for DIRECT impacts from a delay (there's nothing meaningful to "reschedule to" for a POTENTIAL/UNAFFECTED segment, or for a cancellation, where nothing computes a specific new time). */
+  shiftedStart: Date | null
   reason: string
 }
 
@@ -106,12 +108,17 @@ export function calculateImpact(
         segmentId: segment.id,
         level: 'POTENTIAL',
         bufferMinutes: null,
+        shiftedStart: null,
         reason: 'Missing scheduled time on this or the preceding segment — cannot compute a buffer, review manually.',
       })
       continue
     }
 
     const bufferMinutes = Math.round((segStart.getTime() - actualEnd.getTime()) / MS_PER_MINUTE)
+
+    // This segment's actual start can't be earlier than scheduled, but
+    // also can't be earlier than the previous segment's actual end.
+    const actualStart = segStart.getTime() > actualEnd.getTime() ? segStart : actualEnd
 
     let level: SegmentImpactLevel
     let reason: string
@@ -126,14 +133,18 @@ export function calculateImpact(
       reason = `${bufferMinutes}m of buffer comfortably absorbs the shift.`
     }
 
-    results.push({ segmentId: segment.id, level, bufferMinutes, reason })
+    results.push({
+      segmentId: segment.id,
+      level,
+      bufferMinutes,
+      shiftedStart: level === 'DIRECT' ? actualStart : null,
+      reason,
+    })
 
-    // This segment's actual start can't be earlier than scheduled, but
-    // also can't be earlier than the previous segment's actual end; its
-    // actual end preserves its own original duration from there.
+    // Its own actual end preserves its original duration from actualStart,
+    // and becomes the anchor the next segment's buffer is measured against.
     const segEnd = effectiveEnd(segment) ?? segStart
     const durationMs = segEnd.getTime() - segStart.getTime()
-    const actualStart = segStart.getTime() > actualEnd.getTime() ? segStart : actualEnd
     actualEnd = new Date(actualStart.getTime() + durationMs)
   }
 
@@ -160,6 +171,7 @@ export function calculateCancellationImpact(
     segmentId: segment.id,
     level: 'DIRECT' as const,
     bufferMinutes: null,
+    shiftedStart: null,
     reason: 'The segment it connects from was cancelled.',
   }))
 }

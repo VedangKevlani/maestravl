@@ -1,33 +1,46 @@
-// Agent orchestrator — spec sections 4-5 and 13. Thin DB/email wrapper
-// around the pure planner in lib/agents/analyze.ts: persists an AgentRun,
-// logs every step as an AgentAction (the audit trail from spec section 14),
-// and notifies the passenger. Deliberately not unit tested directly (same
-// convention as lib/monitoring/service.ts) — the decision logic it wraps
-// is tested in lib/agents/analyze.test.ts and lib/agents/classify.test.ts.
+// Agent orchestrator — spec sections 4-8 and 13. Thin DB/email wrapper
+// around the pure planner in lib/agents/analyze.ts and the pure message
+// composer in lib/agents/message.ts: persists an AgentRun, logs every step
+// as an AgentAction (the audit trail from spec section 14), discovers and
+// contacts providers, and notifies the passenger. Deliberately not unit
+// tested directly (same convention as lib/monitoring/service.ts) — the
+// decision logic it wraps is tested in lib/agents/analyze.test.ts,
+// lib/agents/classify.test.ts, lib/agents/contactDiscovery.test.ts, and
+// lib/agents/message.test.ts.
 //
 // Resumable by construction: an AgentRun's `status` in the database *is*
 // its execution state, so a request that gets interrupted (serverless cold
 // start, crash) just leaves the run wherever it last got to — nothing is
-// held in memory. There's currently exactly one real transition
-// (DETECTED -> COMPLETED | ACTION_REQUIRED), run synchronously right after
-// the triggering Disruption is created, the same way
-// initializeMonitoringForSegment seeds an immediate first check rather
-// than waiting for the next cron tick. CONTACTING / WAITING_FOR_RESPONSE /
-// RESCHEDULING are reserved for the contact-discovery and communication
-// agents (not built yet) to land in without another migration.
+// held in memory. Right now DETECTED -> ANALYZING -> CONTACTING all happen
+// synchronously in one call (the same way initializeMonitoringForSegment
+// seeds an immediate first check rather than waiting for the next cron
+// tick), ending at COMPLETED, WAITING_FOR_RESPONSE, or ACTION_REQUIRED.
+// RESCHEDULING is reserved for when provider *responses* get processed
+// (not built — nothing reads a reply yet, so a request just sits at
+// WAITING_FOR_RESPONSE until a human checks).
 
 import { prisma } from '@/lib/db'
-import { sendDisruptionImpactEmail } from '@/lib/email'
+import { sendDisruptionImpactEmail, sendProviderEmail } from '@/lib/email'
 import { segmentLabel } from '@/lib/segmentLabel'
 import { planAnalysis, type PlannerSegment } from './analyze'
 import { classifyActionRisk, canAutoExecute } from './policy'
+import { findOrDiscoverContact, isAutoContactable, type ProviderContactRecord } from './contact'
+import { describeDisruptionReason, composeRescheduleRequest, composeAwarenessInquiry } from './message'
+import type { SegmentImpact } from '@/lib/dependency/graph'
 import type { MonitoringCheckStatus } from '@/lib/monitoring/types'
-import type { AgentActionType } from '@/lib/constants'
+import type { AgentActionType, AgentActionStatus } from '@/lib/constants'
 import type { Prisma } from '@prisma/client'
 
 async function logAction(
   agentRunId: string,
-  action: { type: AgentActionType; segmentId: string | null; description: string; detail?: unknown }
+  action: {
+    type: AgentActionType
+    segmentId: string | null
+    description: string
+    detail?: unknown
+    /** Overrides the policy-derived default — use when an action was actually attempted and its real outcome (not just risk tier) determines status, e.g. a send that failed. */
+    status?: AgentActionStatus
+  }
 ) {
   const riskLevel = classifyActionRisk(action.type)
   return prisma.agentAction.create({
@@ -36,7 +49,7 @@ async function logAction(
       segmentId: action.segmentId,
       type: action.type,
       riskLevel,
-      status: canAutoExecute(riskLevel) ? 'EXECUTED' : 'REQUIRES_APPROVAL',
+      status: action.status ?? (canAutoExecute(riskLevel) ? 'EXECUTED' : 'REQUIRES_APPROVAL'),
       description: action.description,
       detail: action.detail ? JSON.stringify(action.detail) : null,
     },
@@ -68,11 +81,11 @@ function toPlannerSegment(segment: {
 }
 
 /**
- * Creates an AgentRun for a Disruption and immediately advances it — there
- * is only one real step implemented right now (analysis), so "advance" and
- * "run to its current stopping point" are the same operation for now. Once
- * CONTACTING/RESCHEDULING exist, this becomes the entry point a cron tick
- * calls repeatedly rather than something that always finishes in one call.
+ * Creates an AgentRun for a Disruption and immediately advances it through
+ * every step currently implemented (analysis, then contacting). Once
+ * provider *responses* are processed, this becomes the entry point a cron
+ * tick calls repeatedly rather than something that always finishes in one
+ * call.
  */
 export async function startAgentRun(disruptionId: string) {
   const disruption = await prisma.disruption.findUnique({ where: { id: disruptionId } })
@@ -83,6 +96,16 @@ export async function startAgentRun(disruptionId: string) {
   })
 
   return runAnalysis(run.id)
+}
+
+type SegmentRow = Prisma.SegmentGetPayload<{}>
+type DisruptionRow = Prisma.DisruptionGetPayload<{}>
+type TripWithRelations = Prisma.TripGetPayload<{ include: { segments: true; passengers: true } }>
+
+interface ContactOutcome {
+  impact: SegmentImpact
+  segment: SegmentRow
+  contacted: boolean
 }
 
 async function runAnalysis(agentRunId: string) {
@@ -120,37 +143,161 @@ async function runAnalysis(agentRunId: string) {
     await logAction(agentRunId, action)
   }
 
-  if (plan.affected.length > 0) {
-    await notifyPassengersOfImpact(agentRunId, trip, disruptedSegment, run.disruption, plan)
+  if (plan.affected.length === 0) {
+    return prisma.agentRun.update({
+      where: { id: agentRunId },
+      data: { status: 'COMPLETED', summary: plan.summary, completedAt: new Date() },
+    })
   }
+
+  await prisma.agentRun.update({ where: { id: agentRunId }, data: { status: 'CONTACTING' } })
+
+  const reasonText = describeDisruptionReason(
+    segmentLabel(disruptedSegment),
+    run.disruption.newStatus as MonitoringCheckStatus,
+    run.disruption.delayMinutes
+  )
+
+  const contactResults: ContactOutcome[] = []
+  for (const impact of plan.affected) {
+    const segment = trip.segments.find((s) => s.id === impact.segmentId)
+    if (!segment) continue
+    contactResults.push(await contactProvider(agentRunId, segment, impact, reasonText))
+  }
+
+  await notifyPassengersOfImpact(agentRunId, trip, disruptedSegment, run.disruption, plan.summary, contactResults)
+
+  const anyContacted = contactResults.some((r) => r.contacted)
+  const allContacted = contactResults.every((r) => r.contacted)
+  const uncontactedCount = contactResults.filter((r) => !r.contacted).length
+
+  const status = allContacted ? 'WAITING_FOR_RESPONSE' : 'ACTION_REQUIRED'
+  const summary = allContacted
+    ? `Maestravl reached out to ${contactResults.length} provider${contactResults.length === 1 ? '' : 's'} and is waiting to hear back.`
+    : anyContacted
+      ? `Maestravl reached out to some providers automatically; ${uncontactedCount} other reservation${uncontactedCount === 1 ? '' : 's'} still need${uncontactedCount === 1 ? 's' : ''} your attention.`
+      : plan.summary
 
   return prisma.agentRun.update({
     where: { id: agentRunId },
-    data: {
-      status: plan.outcome,
-      summary: plan.summary,
-      completedAt: plan.outcome === 'COMPLETED' ? new Date() : null,
-    },
+    data: { status, summary, completedAt: null },
   })
 }
 
-type TripWithRelations = Prisma.TripGetPayload<{ include: { segments: true; passengers: true } }>
-type SegmentRow = Prisma.SegmentGetPayload<{}>
-type DisruptionRow = Prisma.DisruptionGetPayload<{}>
-type AnalysisPlan = ReturnType<typeof planAnalysis>
+/** Finds a contact for one affected segment and, if one is usable, sends a request. Always logs FIND_CONTACT; only logs CONTACT_PROVIDER/REQUEST_RESCHEDULE if a send was actually attempted. */
+async function contactProvider(
+  agentRunId: string,
+  segment: SegmentRow,
+  impact: SegmentImpact,
+  reasonText: string
+): Promise<ContactOutcome> {
+  const label = segmentLabel(segment)
+  const contact = await findOrDiscoverContact(segment.id)
+
+  await logAction(agentRunId, {
+    type: 'FIND_CONTACT',
+    segmentId: segment.id,
+    description: contact
+      ? `Found a ${contact.channel.toLowerCase()} contact for ${label} (confidence ${contact.confidence}, from the ${contact.source.toLowerCase().replace('_', ' ')}).`
+      : `No usable contact information found for ${label} in the booking confirmation or itinerary notes.`,
+  })
+
+  if (!isAutoContactable(contact)) {
+    if (contact) {
+      await logAction(agentRunId, {
+        type: 'ESCALATE',
+        segmentId: segment.id,
+        description: `Only a low-confidence or non-email contact was found for ${label} — not contacting automatically.`,
+      })
+    }
+    return { impact, segment, contacted: false }
+  }
+
+  return sendContactRequest(agentRunId, segment, impact, contact, label, reasonText)
+}
+
+async function sendContactRequest(
+  agentRunId: string,
+  segment: SegmentRow,
+  impact: SegmentImpact,
+  contact: ProviderContactRecord,
+  label: string,
+  reasonText: string
+): Promise<ContactOutcome> {
+  const message = impact.shiftedStart
+    ? composeRescheduleRequest({
+        segmentLabel: label,
+        confirmationNumber: segment.confirmationNumber,
+        originalTime: segment.departureTime ?? segment.arrivalTime,
+        proposedTime: impact.shiftedStart,
+        reasonText,
+      })
+    : composeAwarenessInquiry({ segmentLabel: label, confirmationNumber: segment.confirmationNumber, reasonText })
+
+  const communication = await prisma.communication.create({
+    data: {
+      agentRunId,
+      segmentId: segment.id,
+      contactId: contact.id,
+      direction: 'OUTBOUND',
+      channel: contact.channel,
+      subject: message.subject,
+      content: message.body,
+      status: 'DRAFTED',
+    },
+  })
+
+  try {
+    await sendProviderEmail(contact.value, message.subject, message.body)
+    await prisma.communication.update({ where: { id: communication.id }, data: { status: 'SENT', sentAt: new Date() } })
+    await logAction(agentRunId, {
+      type: 'CONTACT_PROVIDER',
+      segmentId: segment.id,
+      description: `Sent a request to ${label}'s provider (${contact.value}).`,
+      status: 'EXECUTED',
+    })
+
+    if (impact.shiftedStart) {
+      await prisma.rescheduleRequest.create({
+        data: { agentRunId, segmentId: segment.id, requestedTime: impact.shiftedStart, reason: reasonText, status: 'REQUESTED' },
+      })
+      await logAction(agentRunId, {
+        type: 'REQUEST_RESCHEDULE',
+        segmentId: segment.id,
+        description: `Requested moving ${label} to ${impact.shiftedStart.toLocaleString()}.`,
+        status: 'EXECUTED',
+      })
+    }
+
+    return { impact, segment, contacted: true }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    await prisma.communication.update({ where: { id: communication.id }, data: { status: 'FAILED', errorMessage } })
+    await logAction(agentRunId, {
+      type: 'CONTACT_PROVIDER',
+      segmentId: segment.id,
+      description: `Failed to send a request to ${label}'s provider.`,
+      detail: { error: errorMessage },
+      status: 'FAILED',
+    })
+    return { impact, segment, contacted: false }
+  }
+}
 
 async function notifyPassengersOfImpact(
   agentRunId: string,
   trip: TripWithRelations,
   disruptedSegment: SegmentRow,
   disruption: DisruptionRow,
-  plan: AnalysisPlan
+  fallbackReason: string,
+  contactResults: ContactOutcome[]
 ) {
   const disruptedLabel = segmentLabel(disruptedSegment)
-  const affectedLabels = plan.affected.map((impact) => {
-    const segment = trip.segments.find((s: SegmentRow) => s.id === impact.segmentId)
-    return { label: segment ? segmentLabel(segment) : 'A later segment', reason: impact.reason }
-  })
+  const affected = contactResults.map(({ impact, segment, contacted }) => ({
+    label: segmentLabel(segment),
+    reason: impact.reason || fallbackReason,
+    contacted,
+  }))
 
   const recipients = trip.passengers.filter((p) => p.email)
   let anySucceeded = false
@@ -164,7 +311,7 @@ async function notifyPassengersOfImpact(
         disruptedSegmentLabel: disruptedLabel,
         newStatus: disruption.newStatus,
         delayMinutes: disruption.delayMinutes,
-        affected: affectedLabels,
+        affected,
       })
       anySucceeded = true
       results.push({ recipient: passenger.email!, success: true })
@@ -173,20 +320,16 @@ async function notifyPassengersOfImpact(
     }
   }
 
-  await prisma.agentAction.create({
-    data: {
-      agentRunId,
-      segmentId: null,
-      type: 'NOTIFY_PASSENGER',
-      riskLevel: 'LOW',
-      status: recipients.length === 0 ? 'FAILED' : anySucceeded ? 'EXECUTED' : 'FAILED',
-      description:
-        recipients.length === 0
-          ? 'No passenger email on file — could not send the impact summary.'
-          : anySucceeded
-            ? 'Passenger notified of the disruption and what it affects.'
-            : 'Failed to notify passenger of the disruption impact.',
-      detail: JSON.stringify(results),
-    },
+  await logAction(agentRunId, {
+    type: 'NOTIFY_PASSENGER',
+    segmentId: null,
+    description:
+      recipients.length === 0
+        ? 'No passenger email on file — could not send the impact summary.'
+        : anySucceeded
+          ? 'Passenger notified of the disruption and what it affects.'
+          : 'Failed to notify passenger of the disruption impact.',
+    detail: results,
+    status: recipients.length === 0 ? 'FAILED' : anySucceeded ? 'EXECUTED' : 'FAILED',
   })
 }

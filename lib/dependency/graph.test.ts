@@ -26,23 +26,26 @@ describe('calculateImpact', () => {
     expect(calculateImpact(segments, 'missing', 240)).toEqual([])
   })
 
-  it('marks a downstream segment DIRECT when the delay overruns its buffer', () => {
+  it('marks a downstream segment DIRECT when the delay overruns its buffer, and proposes the shifted start', () => {
     // Flight arrives 12:00, transfer was scheduled for 12:30 (30m buffer) —
-    // a 4h delay obliterates it.
+    // a 4h delay obliterates it. The flight's actual arrival (base+4h) is
+    // what should get proposed as the transfer's new start.
     const flight = seg('flight', 0, base, new Date(base.getTime() + 0))
     const transfer = seg('transfer', 1, new Date(base.getTime() + 30 * 60 * 1000), null, 'TAXI')
     const [impact] = calculateImpact([flight, transfer], 'flight', 240)
     expect(impact.segmentId).toBe('transfer')
     expect(impact.level).toBe('DIRECT')
+    expect(impact.shiftedStart).toEqual(new Date(base.getTime() + 4 * HOUR))
   })
 
-  it('marks a downstream segment POTENTIAL when the buffer shrinks but does not break', () => {
+  it('marks a downstream segment POTENTIAL when the buffer shrinks but does not break, with no proposed time', () => {
     // 3h original buffer, 2h delay leaves 1h — inside the 2h warning band.
     const flight = seg('flight', 0, base, base)
     const hotel = seg('hotel', 1, new Date(base.getTime() + 3 * HOUR), null, 'HOTEL')
     const [impact] = calculateImpact([flight, hotel], 'flight', 120)
     expect(impact.level).toBe('POTENTIAL')
     expect(impact.bufferMinutes).toBe(60)
+    expect(impact.shiftedStart).toBeNull()
   })
 
   it('marks a downstream segment UNAFFECTED when the buffer comfortably absorbs the delay', () => {
@@ -51,6 +54,7 @@ describe('calculateImpact', () => {
     const dinner = seg('dinner', 1, new Date(base.getTime() + 6 * HOUR), null, 'RESTAURANT')
     const [impact] = calculateImpact([flight, dinner], 'flight', 60)
     expect(impact.level).toBe('UNAFFECTED')
+    expect(impact.shiftedStart).toBeNull()
   })
 
   it('cascades the shift through a tight segment and lets a later, larger buffer absorb it', () => {
@@ -105,8 +109,8 @@ describe('calculateCancellationImpact', () => {
 
     const impacts = calculateCancellationImpact([flight, transfer, hotel], 'flight')
     expect(impacts).toEqual([
-      { segmentId: 'transfer', level: 'DIRECT', bufferMinutes: null, reason: 'The segment it connects from was cancelled.' },
-      { segmentId: 'hotel', level: 'DIRECT', bufferMinutes: null, reason: 'The segment it connects from was cancelled.' },
+      { segmentId: 'transfer', level: 'DIRECT', bufferMinutes: null, shiftedStart: null, reason: 'The segment it connects from was cancelled.' },
+      { segmentId: 'hotel', level: 'DIRECT', bufferMinutes: null, shiftedStart: null, reason: 'The segment it connects from was cancelled.' },
     ])
   })
 
