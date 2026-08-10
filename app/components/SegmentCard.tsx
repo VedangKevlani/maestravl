@@ -7,6 +7,9 @@ import ConfidenceBadge from './ConfidenceBadge'
 import SegmentEditForm from './SegmentEditForm'
 import { TRANSPORT_ICONS, type PassengerDTO, type SegmentDTO } from './types'
 import { formatMonitoringStatus } from '@/lib/monitoring/format'
+import { toLocalInputValue } from './dateInput'
+
+const fieldClassSmall = 'glass-card px-2.5 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 
 const CHECK_STATUS_STYLES: Record<string, { bg: string; fg: string }> = {
   ON_TIME: { bg: 'rgba(82,183,136,0.12)', fg: '#52b788' },
@@ -40,11 +43,34 @@ const MONITORING_LABEL: Record<string, string> = {
   ERROR: 'Monitoring error',
 }
 
+// "Not yet connected" implies live tracking is possible here and just
+// isn't switched on — true for flights/trains/buses/ferries/taxis (see
+// lib/monitoring/registry.ts), but for types with no adapter at all
+// (hotel, restaurant, excursion, etc.) it's misleading: there's nothing to
+// connect. `apiProvider` is only ever set when an adapter actually matched
+// this segment's transport type (see initializeMonitoringForSegment), so
+// null reliably distinguishes the two cases.
+function monitoringLabel(monitoring: SegmentDTO['monitoring']): string {
+  if (!monitoring || !monitoring.apiProvider) {
+    return "No live tracking for this type — Maestravl still watches for it if an earlier segment on your trip is delayed."
+  }
+  return MONITORING_LABEL[monitoring.status] ?? 'Monitoring status unknown'
+}
+
+interface ReportResult {
+  message?: string
+  agentRun?: { status: string } | null
+}
+
 export default function SegmentCard({ segment, passengers }: { segment: SegmentDTO; passengers: PassengerDTO[] }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportNewTime, setReportNewTime] = useState(() => toLocalInputValue(segment.departureTime))
+  const [reporting, setReporting] = useState(false)
+  const [reportResult, setReportResult] = useState<ReportResult | null>(null)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: segment.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -68,6 +94,34 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
     setChecking(true)
     await fetch(`/api/segments/${segment.id}/monitor`, { method: 'POST' })
     setChecking(false)
+    router.refresh()
+  }
+
+  async function handleReport(status: 'DELAYED' | 'CANCELLED') {
+    setReporting(true)
+    setReportResult(null)
+    const body: { status: string; newDepartureTime?: string } = { status }
+    if (status === 'DELAYED') {
+      const parsed = reportNewTime ? new Date(reportNewTime) : null
+      if (!parsed || isNaN(parsed.getTime())) {
+        setReporting(false)
+        setReportResult({ message: 'Enter the new departure time first.' })
+        return
+      }
+      body.newDepartureTime = parsed.toISOString()
+    }
+    const res = await fetch(`/api/segments/${segment.id}/report-disruption`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({}))
+    setReporting(false)
+    if (!res.ok) {
+      setReportResult({ message: data.error || 'Could not report this — please try again.' })
+      return
+    }
+    setReportResult(data)
     router.refresh()
   }
 
@@ -140,7 +194,7 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
 
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <p className="text-label text-white/20" style={{ fontSize: '0.6rem' }}>
-            {segment.monitoring ? MONITORING_LABEL[segment.monitoring.status] : 'Monitoring not yet connected'}
+            {monitoringLabel(segment.monitoring)}
             {segment.monitoring?.lastCheckedAt && ` · last checked ${formatDateTime(segment.monitoring.lastCheckedAt)}`}
           </p>
           {checkStatus && (
@@ -161,7 +215,56 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
               {checking ? 'Checking…' : 'Check now'}
             </button>
           )}
+          <button
+            onClick={() => { setReportOpen((v) => !v); setReportResult(null) }}
+            className="text-label text-white/40 hover:text-white/80"
+            style={{ fontSize: '0.6rem' }}
+          >
+            {reportOpen ? 'Cancel' : 'Report a delay'}
+          </button>
         </div>
+
+        {reportOpen && (
+          <div className="glass-card p-3 mt-3 flex flex-col gap-2.5">
+            <p className="text-label text-white/40" style={{ fontSize: '0.6rem' }}>
+              Manually tell Maestravl this segment was delayed or cancelled — this is exactly what a real detected
+              disruption triggers, so you can see (and get emailed about) the full recovery flow without waiting on
+              live monitoring.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-editorial text-white/50" style={{ fontSize: '0.78rem' }}>New departure time:</span>
+              <input
+                type="datetime-local"
+                value={reportNewTime}
+                onChange={(e) => setReportNewTime(e.target.value)}
+                className={fieldClassSmall}
+                aria-label="New departure time"
+              />
+              <button
+                onClick={() => handleReport('DELAYED')}
+                disabled={reporting}
+                className="px-3 py-1.5 rounded-full text-label disabled:opacity-50"
+                style={{ background: 'var(--warm-white)', color: 'var(--charcoal)', fontSize: '0.65rem' }}
+              >
+                {reporting ? 'Reporting…' : 'Report delay'}
+              </button>
+              <button
+                onClick={() => handleReport('CANCELLED')}
+                disabled={reporting}
+                className="px-3 py-1.5 rounded-full text-label border border-white/20 text-white/70 disabled:opacity-50"
+                style={{ fontSize: '0.65rem' }}
+              >
+                {reporting ? 'Reporting…' : 'Report cancelled'}
+              </button>
+            </div>
+
+            {reportResult && (
+              <p className="text-editorial text-white/60 border-t border-white/10 pt-2.5 mt-1" style={{ fontSize: '0.8rem' }}>
+                {reportResult.message ?? 'Reported — see the status update at the top of the trip page.'}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

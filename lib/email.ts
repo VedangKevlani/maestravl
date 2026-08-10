@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { formatMonitoringStatus } from './monitoring/format'
+import { formatDuration, formatTime } from './agents/message'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -99,6 +100,10 @@ export async function sendDisruptionImpactEmail(
     disruptedSegmentLabel: string
     newStatus: string
     delayMinutes: number | null
+    /** The disrupted segment's own new departure time, when known — shown alongside the delay duration so the passenger sees an actual time, not just a minute count. */
+    newDepartureTime: Date | null
+    /** The disrupted segment's own timezone — see lib/agents/message.ts's formatTime for why this must never fall back to the server's incidental local zone. */
+    timezone: string | null
     /** `contacted: true` means Maestravl actually sent a request to this provider (see sendProviderEmail) — false means no usable contact was found and the passenger needs to follow up themselves. */
     affected: { label: string; reason: string; contacted: boolean }[]
   }
@@ -107,6 +112,12 @@ export async function sendDisruptionImpactEmail(
   const newLabel = formatMonitoringStatus(opts.newStatus)
   const contactedCount = opts.affected.filter((a) => a.contacted).length
   const subject = `${opts.tripTitle}: ${opts.affected.length} other reservation${opts.affected.length === 1 ? '' : 's'} may need attention`
+
+  const delayPhrase = opts.delayMinutes
+    ? ` — about ${formatDuration(opts.delayMinutes)} late${
+        opts.newDepartureTime ? `, now expected around ${formatTime(opts.newDepartureTime, opts.timezone)}` : ''
+      }`
+    : ''
 
   const affectedHtml = opts.affected
     .map(
@@ -125,9 +136,7 @@ export async function sendDisruptionImpactEmail(
     subject,
     html: `
       <p>Hi ${opts.recipientName},</p>
-      <p><strong>${opts.disruptedSegmentLabel}</strong> (${opts.tripTitle}) is now <strong>${newLabel}</strong>${
-        opts.delayMinutes ? ` (about ${opts.delayMinutes} minutes)` : ''
-      }. Here's what that means for the rest of your trip:</p>
+      <p><strong>${opts.disruptedSegmentLabel}</strong> (${opts.tripTitle}) is now <strong>${newLabel}</strong>${delayPhrase}. Here's what that means for the rest of your trip:</p>
       <ul>${affectedHtml}</ul>
       <p>${
         contactedCount > 0
@@ -147,11 +156,62 @@ export async function sendDisruptionImpactEmail(
  * for what calls this). Unlike the passenger-facing emails above, the body
  * is free text assembled at request time, so it's HTML-escaped before
  * embedding rather than trusted the way this file's fixed templates are.
+ *
+ * `replyTo`, when given, is the per-Communication address from
+ * lib/inboundReplyAddress.ts — when the provider hits "Reply" in their
+ * email client, their message goes there instead of the From address,
+ * which is how app/api/webhooks/resend-inbound matches it back to this
+ * exact conversation. Omitted when RESEND_INBOUND_DOMAIN isn't configured,
+ * so an unconfigured deployment just doesn't advertise an address nothing
+ * is listening on.
  */
-export async function sendProviderEmail(to: string, subject: string, textBody: string) {
+export async function sendProviderEmail(to: string, subject: string, textBody: string, replyTo?: string) {
   const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
   const html = `<div style="white-space: pre-wrap; font-family: sans-serif;">${escapeHtml(textBody)}</div>`
 
-  const { error } = await resend.emails.send({ from, to, subject, html, text: textBody })
+  const { error } = await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    text: textBody,
+    ...(replyTo ? { replyTo } : {}),
+  })
   if (error) throw new Error(error.message)
+}
+
+export interface ReceivedEmail {
+  id: string
+  from: string
+  to: string[]
+  subject: string
+  text: string | null
+  html: string | null
+}
+
+/**
+ * Fetches the full content of an inbound email by id — the
+ * `email.received` webhook payload only carries metadata (from/to/subject),
+ * not the body, per Resend's docs. Returns null on any failure (missing
+ * key, API error, network failure) rather than throwing, since the caller
+ * (the inbound webhook handler) always has a safe fallback: log what it
+ * has and move on, never fabricate the reply's content.
+ */
+export async function fetchReceivedEmail(emailId: string): Promise<ReceivedEmail | null> {
+  if (!process.env.RESEND_API_KEY) return null
+
+  try {
+    const { data } = await resend.emails.receiving.get(emailId)
+    if (!data) return null
+    return {
+      id: data.id,
+      from: data.from,
+      to: data.to,
+      subject: data.subject,
+      text: data.text,
+      html: data.html,
+    }
+  } catch {
+    return null
+  }
 }

@@ -18,10 +18,20 @@ const NEAR_INTERVAL_MS = 1000 * 60 * 60 * 6 // 24-72h to departure
 const SOON_INTERVAL_MS = 1000 * 60 * 60 * 2 // 6-24h to departure
 const IMMINENT_INTERVAL_MS = 1000 * 60 * 30 // <=6h to departure, and in-flight
 
-// Once a segment has reached a terminal status (or departed so long ago it
-// almost certainly has) it stops costing quota — there's nothing left to
-// change that a passenger would need to hear about.
-const STALE_AFTER_DEPARTURE_MS = 1000 * 60 * 60 * 24
+// Once a segment has reached a terminal status it stops costing quota
+// immediately. But a provider that never confirms ARRIVED at all (e.g. it
+// simply doesn't have this flight in its data — see the "noMatch" path in
+// lib/monitoring/adapters/flight/aeroDataBox.ts) would otherwise poll
+// forever, so there's also a time-based fallback: stop asking once we're
+// well past when the segment must be over, confirmation or not. Measured
+// from the *arrival* time when it's known (tightest, most honest signal —
+// a few hours past scheduled arrival covers realistic delays without
+// pointlessly checking into the next day for a flight that already
+// landed) and falls back to a wider window from departure when arrival
+// isn't known, since departure alone can't tell us how long the segment
+// actually takes.
+const STALE_AFTER_ARRIVAL_MS = 1000 * 60 * 60 * 3
+const STALE_AFTER_DEPARTURE_MS = 1000 * 60 * 60 * 8
 
 function computeCheckIntervalMs(departureTime: Date | null): number {
   if (!departureTime) return NEAR_INTERVAL_MS
@@ -32,8 +42,9 @@ function computeCheckIntervalMs(departureTime: Date | null): number {
   return FAR_INTERVAL_MS
 }
 
-function isMonitoringComplete(status: MonitoringCheckStatus, departureTime: Date | null) {
+function isMonitoringComplete(status: MonitoringCheckStatus, departureTime: Date | null, arrivalTime: Date | null) {
   if (status === 'ARRIVED' || status === 'CANCELLED') return true
+  if (arrivalTime) return Date.now() - arrivalTime.getTime() > STALE_AFTER_ARRIVAL_MS
   return Boolean(departureTime && Date.now() - departureTime.getTime() > STALE_AFTER_DEPARTURE_MS)
 }
 
@@ -51,6 +62,7 @@ export async function initializeMonitoringForSegment(segmentId: string) {
     departureLocationCode: segment.departureLocationCode,
     arrivalLocationCode: segment.arrivalLocationCode,
     departureTime: segment.departureTime,
+    arrivalTime: segment.arrivalTime,
   }
 
   const trackingKey = adapter?.buildTrackingKey(monitorable) ?? null
@@ -182,13 +194,14 @@ export async function runMonitoringCheck(segmentId: string) {
     departureLocationCode: segment.departureLocationCode,
     arrivalLocationCode: segment.arrivalLocationCode,
     departureTime: segment.departureTime,
+    arrivalTime: segment.arrivalTime,
   }
 
   const result = await adapter.check(monitorable)
   const nextCheckAt = new Date(Date.now() + computeCheckIntervalMs(segment.departureTime))
   const status = !adapter.isConfigured()
     ? 'NOT_CONFIGURED'
-    : isMonitoringComplete(result.status, segment.departureTime)
+    : isMonitoringComplete(result.status, segment.departureTime, segment.arrivalTime)
       ? 'PAUSED'
       : 'ACTIVE'
 
@@ -213,12 +226,16 @@ export async function runMonitoringCheck(segmentId: string) {
 
   // Only notify once we have a genuine prior reading to compare against —
   // otherwise the very first check would "change" from nothing to something.
-  if (previousStatus && result.status !== previousStatus && result.status !== 'UNKNOWN') {
+  // ARRIVED is deliberately silent — landing isn't actionable or urgent for
+  // the passenger to hear about by email, and this segment's monitoring is
+  // about to pause anyway (see isMonitoringComplete above), so there's
+  // nothing further to report on it either.
+  if (previousStatus && result.status !== previousStatus && result.status !== 'UNKNOWN' && result.status !== 'ARRIVED') {
     await notifyPassengersOfStatusChange(segmentId, previousStatus, result.status)
     // Disruptive changes (a real delay or a cancellation) additionally
     // start a recovery AgentRun — see lib/agents/detect.ts. Routine
-    // progression (BOARDING/DEPARTED/ARRIVED/back to ON_TIME) is already
-    // covered by the notification above and isn't disruptive on its own.
+    // progression (BOARDING/DEPARTED/back to ON_TIME) is already covered by
+    // the notification above and isn't disruptive on its own.
     await handleDisruptionDetection(segment, previousStatus, result)
   }
 

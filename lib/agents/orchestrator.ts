@@ -15,13 +15,22 @@
 // synchronously in one call (the same way initializeMonitoringForSegment
 // seeds an immediate first check rather than waiting for the next cron
 // tick), ending at COMPLETED, WAITING_FOR_RESPONSE, or ACTION_REQUIRED.
-// RESCHEDULING is reserved for when provider *responses* get processed
-// (not built — nothing reads a reply yet, so a request just sits at
-// WAITING_FOR_RESPONSE until a human checks).
+//
+// A provider's reply, when it arrives, is handled asynchronously by
+// app/api/webhooks/resend-inbound (see lib/agents/inboundReply.ts) — every
+// provider-facing email's Reply-To is a per-Communication address (see
+// lib/inboundReplyAddress.ts) so a reply can be matched back here without
+// relying on undocumented email threading headers. A reply moves the run
+// to ACTION_REQUIRED, not straight to CONFIRMED/RESCHEDULING — Maestravl
+// can read that a reply arrived, not what it actually says (no LLM
+// interpreting the content), so the passenger reads it and decides what it
+// means, per spec section 20 (never claim a resolution that wasn't
+// verified).
 
 import { prisma } from '@/lib/db'
 import { sendDisruptionImpactEmail, sendProviderEmail } from '@/lib/email'
 import { segmentLabel } from '@/lib/segmentLabel'
+import { buildReplyAddress } from '@/lib/inboundReplyAddress'
 import { planAnalysis, type PlannerSegment } from './analyze'
 import { classifyActionRisk, canAutoExecute } from './policy'
 import { findOrDiscoverContact, isAutoContactable, type ProviderContactRecord } from './contact'
@@ -230,6 +239,7 @@ async function sendContactRequest(
         confirmationNumber: segment.confirmationNumber,
         originalTime: segment.departureTime ?? segment.arrivalTime,
         proposedTime: impact.shiftedStart,
+        timezone: segment.timezone,
         reasonText,
       })
     : composeAwarenessInquiry({ segmentLabel: label, confirmationNumber: segment.confirmationNumber, reasonText })
@@ -248,7 +258,7 @@ async function sendContactRequest(
   })
 
   try {
-    await sendProviderEmail(contact.value, message.subject, message.body)
+    await sendProviderEmail(contact.value, message.subject, message.body, buildReplyAddress(communication.id) ?? undefined)
     await prisma.communication.update({ where: { id: communication.id }, data: { status: 'SENT', sentAt: new Date() } })
     await logAction(agentRunId, {
       type: 'CONTACT_PROVIDER',
@@ -311,6 +321,8 @@ async function notifyPassengersOfImpact(
         disruptedSegmentLabel: disruptedLabel,
         newStatus: disruption.newStatus,
         delayMinutes: disruption.delayMinutes,
+        newDepartureTime: disruption.newDepartureTime,
+        timezone: disruptedSegment.timezone,
         affected,
       })
       anySucceeded = true

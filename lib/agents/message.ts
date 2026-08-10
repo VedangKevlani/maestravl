@@ -9,15 +9,27 @@
 
 import type { MonitoringCheckStatus } from '@/lib/monitoring/types'
 
-const TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  timeZoneName: 'short',
-})
+// Renders a time in the *segment's own* timezone (e.g. "America/Los_Angeles"
+// for a flight out of Oakland), never the server's incidental local zone —
+// Intl.DateTimeFormat silently falls back to the runtime's own timezone if
+// `timeZone` is omitted, which has nothing to do with where the flight or
+// hotel actually is and would render a confidently wrong-looking label
+// (e.g. "EST" on a Pacific-coast flight) rather than an honestly generic one.
+// Falls back to UTC — labeled as such — when the segment has no timezone on
+// file, which is the honest "we don't actually know" answer.
+export function formatTime(date: Date, timezone: string | null): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    timeZone: timezone || 'UTC',
+  }).format(date)
+}
 
-function formatDuration(minutes: number): string {
+/** e.g. 101 -> "1 hour 41 minutes" — used anywhere a delay is shown to a person, so nobody has to do the math on a raw minute count themselves. */
+export function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60)
   const mins = minutes % 60
   if (hours === 0) return `${mins} minutes`
@@ -51,6 +63,8 @@ export function composeRescheduleRequest(input: {
   confirmationNumber: string | null
   originalTime: Date | null
   proposedTime: Date
+  /** IANA zone (e.g. "America/Los_Angeles") for the segment being rescheduled — this is the provider's own location, which is what matters to them, not wherever Maestravl's server happens to run. Null renders times in UTC, labeled honestly rather than guessing. */
+  timezone: string | null
   reasonText: string
 }): ComposedMessage {
   const bookingLine = input.confirmationNumber ? ` (Booking ${input.confirmationNumber})` : ''
@@ -61,13 +75,11 @@ export function composeRescheduleRequest(input: {
     '',
     input.reasonText,
     '',
-    ...(input.originalTime ? ['Original time:', TIME_FORMAT.format(input.originalTime), ''] : []),
+    ...(input.originalTime ? ['Original time:', formatTime(input.originalTime, input.timezone), ''] : []),
     'Requested new time:',
-    TIME_FORMAT.format(input.proposedTime),
+    formatTime(input.proposedTime, input.timezone),
     '',
-    'Booking:',
-    input.confirmationNumber ?? 'N/A',
-    '',
+    ...(input.confirmationNumber ? ['Booking:', input.confirmationNumber, ''] : []),
     'Could you please confirm whether this change is possible?',
     '',
     'Thank you,',
@@ -93,9 +105,7 @@ export function composeAwarenessInquiry(input: {
     '',
     `We wanted to flag this in case it affects our passenger's ${input.segmentLabel}. Could you let us know if any changes are needed, or if any updated information is needed from us?`,
     '',
-    'Booking:',
-    input.confirmationNumber ?? 'N/A',
-    '',
+    ...(input.confirmationNumber ? ['Booking:', input.confirmationNumber, ''] : []),
     'Thank you,',
     'Maestravl, coordinating on behalf of the passenger',
   ].join('\n')

@@ -118,6 +118,19 @@ export async function POST(req: Request) {
       existingNames.add(name.toLowerCase())
     }
 
+    // Every passenger now on the trip (pre-existing or just extracted from
+    // this document) gets linked to every segment this document produced —
+    // same default as manually adding a segment (see
+    // app/api/trips/[id]/segments/route.ts): a segment should never
+    // silently start with nobody to notify if it's disrupted.
+    const allPassengers = await prisma.passenger.findMany({ where: { tripId }, select: { id: true } })
+    if (allPassengers.length > 0 && createdSegmentIds.length > 0) {
+      await prisma.segmentPassenger.createMany({
+        data: createdSegmentIds.flatMap((segmentId) => allPassengers.map((p) => ({ segmentId, passengerId: p.id }))),
+        skipDuplicates: true,
+      })
+    }
+
     await prisma.document.update({
       where: { id: document.id },
       data: { status: 'COMPLETED', extractedRawText: text, processedAt: new Date() },

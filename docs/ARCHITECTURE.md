@@ -285,13 +285,76 @@ MEDIUM/HIGH paths (a reschedule with a fee, a non-refundable cancellation)
 are implemented in the policy module but have no caller yet, since nothing
 proposes a reschedule *with a fee* until a provider's reply is processed.
 
-**Not yet built:** processing a provider's *reply* (nothing reads a
-response — a sent request just sits at `WAITING_FOR_RESPONSE` until a
-human checks manually), the alternatives-ranking agent (spec section 8 —
-right now there's exactly one proposed time per DIRECT impact, not a
-ranked set of options), and the passenger-facing recovery timeline UI.
-`AgentRun.status` also doesn't yet have a `RESCHEDULING` path — that's
-reserved for when a reply triggers an itinerary update.
+**Provider replies** — two paths, both real, neither faked:
+
+- *Manual* (`app/api/agent-runs/[id]/resolve`, the "Heard back?" button in
+  `TripRecoveryStatus.tsx`): the passenger tells Maestravl themselves that
+  a provider responded (by phone/text/whatever), with an optional note.
+  Moves the run straight to `CONFIRMED` — the passenger is asserting
+  resolution, not Maestravl inferring it.
+- *Automatic* (`lib/agents/inboundReply.ts` + `app/api/webhooks/resend-inbound`,
+  opt-in via `RESEND_INBOUND_DOMAIN`/`RESEND_WEBHOOK_SECRET`): every
+  provider-facing email's `Reply-To` is a per-`Communication` address
+  (`lib/inboundReplyAddress.ts`, `reply+<communicationId>@<inbound-domain>`)
+  — Resend has no documented reply-threading headers, so this address *is*
+  the correlation mechanism. When a reply lands, the webhook (signature
+  verified via `resend.webhooks.verify`, Svix under the hood) fetches the
+  full body (`resend.emails.receiving.get` — the webhook payload itself is
+  metadata-only), strips the quoted thread history
+  (`lib/agents/replyText.ts`, best-effort — catches "On ... wrote:" and
+  "> "-quoted blocks, not every client's convention), and records it as an
+  inbound `Communication`.
+
+  Deliberately moves the run to `ACTION_REQUIRED`, **not** `CONFIRMED` —
+  Maestravl knows a reply arrived, not what it says (no LLM interprets the
+  content), so the passenger reads the actual quoted reply themselves
+  rather than Maestravl guessing at the outcome. Same honesty boundary as
+  everywhere else in this file.
+
+**Not yet built:** the alternatives-ranking agent (spec section 8 — right
+now there's exactly one proposed time per DIRECT impact, not a ranked set
+of options), and using a reply's content to actually update the itinerary
+(`AgentRun.status` has a `RESCHEDULING` value reserved for this — nothing
+produces it yet, since that requires *interpreting* a reply, not just
+detecting one).
+
+## Passenger-facing recovery status
+
+`TripRecoveryStatus.tsx` (embedded at the top of the trip page) replaced
+an earlier version that dumped every `AgentAction` at once — per direct
+feedback, that read as a technical log in the middle of an already
+stressful situation. Current design:
+
+- A single calm headline derived from `AgentRun.status` via a status→copy
+  table (`STATUS_COPY`) — never a raw enum value.
+- The single latest action underneath, as a live-feeling ticker (the panel
+  polls `GET /api/trips/[id]/activity` every ~12s — no websocket/SSE
+  infrastructure in this stack, and polling a handful of trips this
+  infrequently is cheap).
+- Full history is opt-in behind "View all activity," not shown by default.
+- "Heard back?" appears whenever a run is genuinely waiting on someone
+  (`WAITING_FOR_RESPONSE`/`ACTION_REQUIRED`) — the manual-resolve escape
+  hatch described above.
+
+## Trip archiving
+
+A trip moves to `COMPLETED` (shown in the dashboard's collapsed "Archived
+trips" section, `app/(app)/dashboard/page.tsx`) once **every** one of its
+segments is finished — `lib/trips/archive.ts`, swept on each monitoring
+cron tick rather than triggered by a single segment's status, since most
+segment types (hotel, restaurant, taxi, etc.) are never monitored at all
+and the sweep has to work without relying on monitoring coverage. A
+segment counts as finished once its scheduled end has passed by a 6h
+buffer, or it's `CANCELLED`; unknown timing never counts as finished
+(never assume completion from missing data).
+
+Monitoring itself also stops promptly on its own — `isMonitoringComplete`
+in `lib/monitoring/service.ts` pauses a segment 3h past its *known* arrival
+time, or 8h past departure if arrival isn't known, rather than the 24h
+window this used to have. That window mattered in practice: a real segment
+whose provider (e.g. AeroDataBox) simply has no data for it — a genuine
+`noMatch`, not a bug — would otherwise poll every 30 minutes for a full
+day past its original departure before giving up.
 
 ## Known limitations (by design, for this iteration)
 

@@ -54,6 +54,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const maxOrder = await prisma.segment.aggregate({ where: { tripId }, _max: { order: true } })
   const order = (maxOrder._max.order ?? -1) + 1
 
+  // A new segment defaults to every passenger already on the trip — almost
+  // always true (everyone's on the same itinerary), and means a segment
+  // never silently starts with nobody to notify if it's disrupted. Only
+  // used when the caller didn't explicitly choose a subset.
+  const passengerIds = data.passengerIds?.length
+    ? data.passengerIds
+    : (await prisma.passenger.findMany({ where: { tripId }, select: { id: true } })).map((p) => p.id)
+
   const segment = await prisma.segment.create({
     data: {
       tripId,
@@ -80,9 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       price: data.price ?? null,
       notes: data.notes || null,
       baggageInfo: data.baggageInfo || null,
-      passengerLinks: data.passengerIds?.length
-        ? { create: data.passengerIds.map((passengerId) => ({ passengerId })) }
-        : undefined,
+      passengerLinks: passengerIds.length ? { create: passengerIds.map((passengerId) => ({ passengerId })) } : undefined,
     },
     include: { passengerLinks: { include: { passenger: true } } },
   })

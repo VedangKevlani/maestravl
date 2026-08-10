@@ -26,6 +26,7 @@ describe('composeRescheduleRequest', () => {
       confirmationNumber: 'ABC123',
       originalTime: new Date('2026-12-15T14:00:00Z'),
       proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: 'America/Jamaica',
       reasonText: "Our passenger's flight has been delayed by approximately 4 hours.",
     })
 
@@ -36,16 +37,57 @@ describe('composeRescheduleRequest', () => {
     expect(body.toLowerCase()).not.toContain('has been changed')
   })
 
-  it('omits the original-time block when it is unknown', () => {
+  it('omits the original-time block when it is unknown, and omits the Booking line entirely rather than showing N/A', () => {
     const { body } = composeRescheduleRequest({
       segmentLabel: 'Airport transfer',
       confirmationNumber: null,
       originalTime: null,
       proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: null,
       reasonText: 'Our passenger was delayed.',
     })
     expect(body).not.toContain('Original time:')
-    expect(body).toContain('N/A')
+    expect(body).not.toContain('Booking:')
+    expect(body).not.toContain('N/A')
+  })
+
+  it('renders times in the segment\'s own timezone, not whatever zone the server happens to run in', () => {
+    // 2026-12-15T18:00:00Z is 1pm in New York (UTC-5 in December) and 10am
+    // in Los Angeles (UTC-8) — if this ever renders as neither, something
+    // is falling back to the test runner's local zone instead of the one
+    // passed in.
+    const ny = composeRescheduleRequest({
+      segmentLabel: 'Hotel check-in',
+      confirmationNumber: null,
+      originalTime: null,
+      proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: 'America/New_York',
+      reasonText: 'x',
+    })
+    expect(ny.body).toContain('1:00')
+    expect(ny.body).toMatch(/EST|GMT-5/)
+
+    const la = composeRescheduleRequest({
+      segmentLabel: 'Hotel check-in',
+      confirmationNumber: null,
+      originalTime: null,
+      proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: 'America/Los_Angeles',
+      reasonText: 'x',
+    })
+    expect(la.body).toContain('10:00')
+  })
+
+  it('falls back to UTC, explicitly labeled, when the segment has no timezone on file', () => {
+    const { body } = composeRescheduleRequest({
+      segmentLabel: 'Hotel check-in',
+      confirmationNumber: null,
+      originalTime: null,
+      proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: null,
+      reasonText: 'x',
+    })
+    expect(body).toContain('UTC')
   })
 })
 

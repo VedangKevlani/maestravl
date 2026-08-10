@@ -24,6 +24,42 @@ const HAS_ROUTE = new Set(['FLIGHT', 'TRAIN', 'BUS', 'TAXI', 'FERRY', 'CRUISE', 
 const HAS_TERMINAL_GATE = new Set(['FLIGHT'])
 const HAS_SEAT_CABIN = new Set(['FLIGHT', 'TRAIN', 'BUS', 'CRUISE'])
 
+const PROVIDER_PLACEHOLDERS: Record<string, string> = {
+  FLIGHT: 'e.g. American Airlines',
+  TRAIN: 'e.g. Amtrak',
+  BUS: 'e.g. Greyhound',
+  TAXI: 'e.g. Uber, local taxi co.',
+  FERRY: 'e.g. Star Ferry',
+  CRUISE: 'e.g. Royal Caribbean',
+  BOAT: 'e.g. charter company',
+  HELICOPTER: 'e.g. Blade',
+  BICYCLE: 'e.g. Lime, Citi Bike',
+  RENTAL_CAR: 'e.g. Hertz',
+  WALKING: 'e.g. guided tour company',
+  HOTEL: 'e.g. Marriott, Airbnb host',
+  RESTAURANT: 'e.g. restaurant name',
+  EXCURSION: 'e.g. tour operator',
+  OTHER: 'e.g. company / operator name',
+}
+
+const IDENTIFIER_PLACEHOLDERS: Record<string, string> = {
+  FLIGHT: 'e.g. AA123',
+  TRAIN: 'e.g. train / route number',
+  BUS: 'e.g. route / bus number',
+  TAXI: 'e.g. confirmation code',
+  FERRY: 'e.g. crossing number',
+  CRUISE: 'e.g. ship name / sailing number',
+  BOAT: 'e.g. booking reference',
+  HELICOPTER: 'e.g. flight number',
+  BICYCLE: 'e.g. bike / dock number',
+  RENTAL_CAR: 'e.g. reservation number',
+  WALKING: 'e.g. route name',
+  HOTEL: 'e.g. confirmation number',
+  RESTAURANT: 'e.g. reservation number',
+  EXCURSION: 'e.g. booking reference',
+  OTHER: 'e.g. reference number',
+}
+
 const fieldClass = 'glass-card px-3.5 py-2.5 text-editorial text-white bg-transparent outline-none w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 const labelClass = 'text-label text-white/40'
 
@@ -105,11 +141,11 @@ export default function TransportTypeForm({ tripId, onCreated }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Provider / operator</span>
-          <input className={fieldClass} value={form.provider ?? ''} onChange={(e) => set('provider', e.target.value)} placeholder="e.g. American Airlines" />
+          <input className={fieldClass} value={form.provider ?? ''} onChange={(e) => set('provider', e.target.value)} placeholder={PROVIDER_PLACEHOLDERS[transportType]} />
         </label>
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Identifier / number</span>
-          <input className={fieldClass} value={form.identifier ?? ''} onChange={(e) => set('identifier', e.target.value)} placeholder="e.g. AA123" />
+          <input className={fieldClass} value={form.identifier ?? ''} onChange={(e) => set('identifier', e.target.value)} placeholder={IDENTIFIER_PLACEHOLDERS[transportType]} />
         </label>
 
         {HAS_ROUTE.has(transportType) && (
@@ -140,6 +176,25 @@ export default function TransportTypeForm({ tripId, onCreated }: Props) {
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Arrival time</span>
           <input type="datetime-local" className={fieldClass} value={form.arrivalTime ?? ''} onChange={(e) => set('arrivalTime', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1.5 sm:col-span-2">
+          <span className={labelClass}>Timezone (where this actually happens — matters for messages sent on your behalf)</span>
+          <div className="flex gap-2">
+            <input
+              className={fieldClass}
+              value={form.timezone ?? ''}
+              onChange={(e) => set('timezone', e.target.value)}
+              placeholder="e.g. America/Jamaica, America/Los_Angeles"
+            />
+            <button
+              type="button"
+              onClick={() => set('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone)}
+              className="text-label text-white/40 hover:text-white/80 whitespace-nowrap shrink-0"
+              style={{ fontSize: '0.7rem' }}
+            >
+              Use mine
+            </button>
+          </div>
         </label>
 
         {HAS_TERMINAL_GATE.has(transportType) && (

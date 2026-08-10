@@ -11,9 +11,14 @@ import { handleDisruptionDetection } from '@/lib/agents/detect'
 // end-to-end without waiting for a real flight delay. Feeds the exact same
 // handleDisruptionDetection path a real monitoring check would, so there's
 // no separate "fake" code path to keep in sync.
+//
+// Takes the actual new departure time rather than a minutes-late count —
+// the delay is derived here, server-side, from the segment's own scheduled
+// time, so the passenger reports what they actually know (what time the
+// airline/hotel/etc. now says) instead of doing the subtraction themselves.
 const ReportDisruptionSchema = z.object({
   status: z.enum(['DELAYED', 'CANCELLED']),
-  delayMinutes: z.number().int().positive().max(2880).optional(), // cap at 48h — anything longer isn't a "delay", it's effectively a cancellation
+  newDepartureTime: z.string().datetime().optional(),
 })
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +36,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
   }
-  const { status, delayMinutes } = parsed.data
+  const { status, newDepartureTime } = parsed.data
+
+  let delayMinutes: number | undefined
+  if (status === 'DELAYED') {
+    if (!newDepartureTime) {
+      return NextResponse.json({ error: 'Enter the new departure time.' }, { status: 400 })
+    }
+    if (!segment.departureTime) {
+      return NextResponse.json(
+        { error: "This segment doesn't have a scheduled departure time on file — set one first (Edit), then report the delay." },
+        { status: 400 }
+      )
+    }
+    delayMinutes = Math.round((new Date(newDepartureTime).getTime() - segment.departureTime.getTime()) / 60_000)
+    if (delayMinutes <= 0) {
+      return NextResponse.json({ error: 'The new departure time must be after the originally scheduled time.' }, { status: 400 })
+    }
+    if (delayMinutes > 2880) {
+      // Cap at 48h — anything longer isn't really a "delay" anymore.
+      return NextResponse.json({ error: "That's more than 48 hours later — report this as cancelled instead." }, { status: 400 })
+    }
+  }
 
   const disruption = await handleDisruptionDetection(segment, segment.status, {
     status,

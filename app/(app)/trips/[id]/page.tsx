@@ -5,6 +5,7 @@ import Timeline from '../../../components/Timeline'
 import TransportTypeForm from '../../../components/TransportTypeForm'
 import UploadDropzone from '../../../components/UploadDropzone'
 import TripHeader from '../../../components/TripHeader'
+import TripRecoveryStatus from '../../../components/TripRecoveryStatus'
 import type { SegmentDTO, TripDTO } from '../../../components/types'
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -69,7 +70,11 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     <div>
       <TripHeader trip={dto} />
 
-      <section className="mt-10">
+      <div className="mt-8">
+        <TripRecoveryStatus tripId={dto.id} />
+      </div>
+
+      <section className="mt-2">
         <p className="text-label text-white/40 mb-3">timeline</p>
         <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} />
       </section>

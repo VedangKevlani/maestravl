@@ -29,6 +29,7 @@ export interface MonitorableSegment {
   departureLocationCode: string | null
   arrivalLocationCode: string | null
   departureTime: Date | null
+  arrivalTime: Date | null
 }
 
 /**

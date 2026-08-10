@@ -1,16 +1,10 @@
 'use client'
 import { useState } from 'react'
 import type { PassengerDTO, SegmentDTO } from './types'
+import { toLocalInputValue as toLocalInput } from './dateInput'
 
 const fieldClass = 'glass-card px-3.5 py-2.5 text-editorial text-white bg-transparent outline-none w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 const labelClass = 'text-label text-white/40'
-
-function toLocalInput(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 export default function SegmentEditForm({ segment, passengers, onDone, onCancel }: { segment: SegmentDTO; passengers: PassengerDTO[]; onDone: () => void; onCancel: () => void }) {
   const [passengerIds, setPassengerIds] = useState<string[]>(segment.passengerIds)
@@ -23,6 +17,7 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
     arrivalLocationCode: segment.arrivalLocationCode ?? '',
     departureTime: toLocalInput(segment.departureTime),
     arrivalTime: toLocalInput(segment.arrivalTime),
+    timezone: segment.timezone ?? '',
     departureTerminal: segment.departureTerminal ?? '',
     departureGate: segment.departureGate ?? '',
     seat: segment.seat ?? '',
@@ -108,6 +103,25 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Arrival time</span>
           <input type="datetime-local" className={fieldClass} value={form.arrivalTime} onChange={(e) => set('arrivalTime', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1.5 sm:col-span-2">
+          <span className={labelClass}>Timezone (where this actually happens — matters for messages sent on your behalf)</span>
+          <div className="flex gap-2">
+            <input
+              className={fieldClass}
+              value={form.timezone}
+              onChange={(e) => set('timezone', e.target.value)}
+              placeholder="e.g. America/Jamaica, America/Los_Angeles"
+            />
+            <button
+              type="button"
+              onClick={() => set('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone)}
+              className="text-label text-white/40 hover:text-white/80 whitespace-nowrap shrink-0"
+              style={{ fontSize: '0.7rem' }}
+            >
+              Use mine
+            </button>
+          </div>
         </label>
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Terminal</span>
