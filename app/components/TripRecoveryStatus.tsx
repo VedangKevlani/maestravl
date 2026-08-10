@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentActionType, AgentRunStatus } from '@/lib/constants'
+import type { AgentActionType } from '@/lib/constants'
 
 interface ActivityAction {
   id: string
@@ -62,6 +62,10 @@ const TONE_COLOR: Record<string, { bg: string; fg: string }> = {
   idle: { bg: 'rgba(255,255,255,0.06)', fg: 'rgba(255,255,255,0.5)' },
 }
 
+function toneOf(status: string): keyof typeof TONE_COLOR {
+  return STATUS_COPY[status]?.tone ?? 'progress'
+}
+
 function isTerminal(status: string) {
   return status === 'COMPLETED' || status === 'FAILED' || status === 'CONFIRMED'
 }
@@ -86,9 +90,41 @@ function formatRelativeTime(iso: string): string {
 
 const POLL_INTERVAL_MS = 12000
 
+/** One entry in a run's timeline — a dot, the description, and a right-aligned relative time, with enough room to breathe. */
+function ActionRow({ action }: { action: ActivityAction }) {
+  return (
+    <div className="flex items-start gap-3 py-2.5">
+      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/25 shrink-0" aria-hidden="true" />
+      <p className="flex-1 text-editorial text-white/70 min-w-0" style={{ fontSize: '0.83rem', lineHeight: 1.55 }}>
+        {action.description}
+      </p>
+      <span className="text-label text-white/30 shrink-0 pt-0.5 whitespace-nowrap" style={{ fontSize: '0.65rem' }}>
+        {formatRelativeTime(action.createdAt)}
+      </span>
+    </div>
+  )
+}
+
+/** A run's header — segment name + a status dot + calm status label. Shared between the always-open latest run and the collapsed older ones. */
+function RunHeader({ run }: { run: ActivityRun }) {
+  const colors = TONE_COLOR[toneOf(run.status)]
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colors.fg }} aria-hidden="true" />
+      <span className="text-editorial text-white font-medium truncate" style={{ fontSize: '0.85rem' }}>
+        {run.disruption.segmentLabel}
+      </span>
+      <span className="text-label text-white/35 shrink-0" style={{ fontSize: '0.62rem' }}>
+        {STATUS_COPY[run.status]?.headline ?? run.status}
+      </span>
+    </div>
+  )
+}
+
 export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
   const [runs, setRuns] = useState<ActivityRun[] | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [openRunIds, setOpenRunIds] = useState<Set<string>>(new Set())
   const [resolveOpen, setResolveOpen] = useState(false)
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
@@ -130,11 +166,20 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
     ? ACTION_TYPE_LABEL[latestAction.type as AgentActionType] ?? latestAction.description
     : null
 
-  const allActions = runs
-    .flatMap((run) =>
-      run.actions.map((a) => ({ ...a, runId: run.id, runStatus: run.status as AgentRunStatus, segmentLabel: run.disruption.segmentLabel }))
-    )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  // Most recent run gets its full timeline shown right away; anything
+  // older is a single collapsed row until explicitly clicked open — a
+  // trip with several past disruptions shouldn't dump all of them on you
+  // at once.
+  const [mostRecentRun, ...olderRuns] = runs
+
+  function toggleRun(id: string) {
+    setOpenRunIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function handleResolve() {
     if (!headlineRun) return
@@ -179,7 +224,7 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
               {resolveOpen ? 'Cancel' : 'Heard back?'}
             </button>
           )}
-          {allActions.length > 0 && (
+          {runs.length > 0 && (
             <button
               onClick={() => setExpanded((v) => !v)}
               className="text-label text-white/40 hover:text-white/80 whitespace-nowrap"
@@ -217,22 +262,52 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
       )}
 
       {expanded && (
-        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-4 max-h-96 overflow-y-auto">
-          {runs.map((run) => (
-            <div key={run.id}>
-              <p className="text-label text-white/40" style={{ fontSize: '0.62rem' }}>
-                {run.disruption.segmentLabel} — {STATUS_COPY[run.status]?.headline ?? run.status}
-              </p>
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {run.actions.map((a) => (
-                  <li key={a.id} className="text-editorial text-white/55 flex justify-between gap-3" style={{ fontSize: '0.78rem' }}>
-                    <span>· {a.description}</span>
-                    <span className="text-white/25 shrink-0">{formatRelativeTime(a.createdAt)}</span>
-                  </li>
+        <div className="mt-5 pt-5 border-t border-white/10 flex flex-col gap-6 max-h-[32rem] overflow-y-auto">
+          {mostRecentRun && (
+            <div>
+              <RunHeader run={mostRecentRun} />
+              <div className="mt-2 pl-4 divide-y divide-white/5">
+                {mostRecentRun.actions.map((a) => (
+                  <ActionRow key={a.id} action={a} />
                 ))}
-              </ul>
+              </div>
             </div>
-          ))}
+          )}
+
+          {olderRuns.length > 0 && (
+            <div>
+              <p className="text-label text-white/25 mb-2" style={{ fontSize: '0.6rem' }}>Earlier</p>
+              <div className="flex flex-col divide-y divide-white/5">
+                {olderRuns.map((run) => {
+                  const isOpen = openRunIds.has(run.id)
+                  return (
+                    <div key={run.id}>
+                      <button
+                        onClick={() => toggleRun(run.id)}
+                        className="w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-white/[0.03] rounded-lg px-2 -mx-2 transition-colors"
+                        aria-expanded={isOpen}
+                      >
+                        <RunHeader run={run} />
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-label text-white/25 whitespace-nowrap" style={{ fontSize: '0.6rem' }}>
+                            {run.actions.length} update{run.actions.length === 1 ? '' : 's'} · {formatRelativeTime(run.createdAt)}
+                          </span>
+                          <span className="text-white/30 select-none" style={{ fontSize: '0.6rem' }}>{isOpen ? '▲' : '▼'}</span>
+                        </div>
+                      </button>
+                      {isOpen && (
+                        <div className="pl-4 pb-2 divide-y divide-white/5">
+                          {run.actions.map((a) => (
+                            <ActionRow key={a.id} action={a} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
