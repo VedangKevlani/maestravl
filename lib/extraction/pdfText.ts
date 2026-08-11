@@ -34,10 +34,10 @@ export async function extractNativePdfText(bytes: Uint8Array): Promise<string> {
 
 /** Renders each PDF page to a PNG buffer for OCR fallback (scanned/rasterized PDFs). */
 export async function renderPdfPagesToPng(bytes: Uint8Array): Promise<Buffer[]> {
-  const { createCanvas } = await import('canvas').catch(() => {
+  const { createCanvas } = await import('@napi-rs/canvas').catch(() => {
     throw new Error(
-      'Rendering scanned PDFs to images requires the optional "canvas" package. ' +
-      'Install it with `npm install canvas`, or upload the pages as JPEG/PNG images instead.'
+      'Rendering scanned PDFs to images requires the optional "@napi-rs/canvas" package. ' +
+      'Install it with `npm install @napi-rs/canvas`, or upload the pages as JPEG/PNG images instead.'
     )
   })
 

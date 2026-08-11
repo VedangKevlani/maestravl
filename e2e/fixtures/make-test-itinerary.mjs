@@ -1,7 +1,7 @@
 // Generates a synthetic scanned-itinerary image (e2e/fixtures/test-itinerary.png)
 // used by e2e/upload.mjs to exercise the OCR + parsing pipeline without
 // needing a real travel document.
-import { createCanvas } from 'canvas';
+import { createCanvas } from '@napi-rs/canvas';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
