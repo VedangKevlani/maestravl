@@ -6,6 +6,7 @@ import TransportTypeForm from '../../../components/TransportTypeForm'
 import UploadDropzone from '../../../components/UploadDropzone'
 import TripHeader from '../../../components/TripHeader'
 import TripRecoveryStatus from '../../../components/TripRecoveryStatus'
+import VoiceWidget from '../../../components/VoiceWidget'
 import type { SegmentDTO, TripDTO } from '../../../components/types'
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +89,8 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         <p className="text-label text-white/40 mb-3">import another document</p>
         <UploadDropzone tripId={dto.id} />
       </section>
+
+      <VoiceWidget tripId={dto.id} />
     </div>
   )
 }

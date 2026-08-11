@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentActionType } from '@/lib/constants'
+import { STATUS_COPY, actionLabel, toneOf } from '@/lib/agents/statusCopy'
 
 interface ActivityAction {
   id: string
@@ -21,49 +21,11 @@ interface ActivityRun {
   actions: ActivityAction[]
 }
 
-// Calm, human headline per run status — this is what a stressed-out
-// passenger reads first, so no raw enum values (WAITING_FOR_RESPONSE, etc.)
-// and no "technical" framing (confidence scores, action types) ever show
-// up here. The full, more detailed log is opt-in via "View all activity."
-const STATUS_COPY: Record<string, { headline: string; tone: 'progress' | 'attention' | 'resolved' }> = {
-  DETECTED: { headline: 'Maestravl noticed a change and is looking into it', tone: 'progress' },
-  ANALYZING: { headline: "Maestravl is checking what this affects", tone: 'progress' },
-  CONTACTING: { headline: 'Maestravl is reaching out on your behalf', tone: 'progress' },
-  WAITING_FOR_RESPONSE: { headline: "Maestravl is waiting to hear back", tone: 'progress' },
-  RESCHEDULING: { headline: 'Maestravl is updating your itinerary', tone: 'progress' },
-  CONFIRMED: { headline: "Confirmed — you're all set", tone: 'resolved' },
-  ALTERNATIVE_FOUND: { headline: 'Maestravl found some options for you', tone: 'attention' },
-  ACTION_REQUIRED: { headline: 'A couple of things need your attention', tone: 'attention' },
-  FAILED: { headline: "Something didn't go through — here's what to do", tone: 'attention' },
-  COMPLETED: { headline: "You're all set — nothing else needs your attention", tone: 'resolved' },
-}
-
-// Short, friendly label per action type — used for the single-line "live"
-// ticker so it reads like a person narrating, not a system log. VERIFY is
-// deliberately absent: its descriptions are already specific and calm
-// (e.g. a quoted provider reply, or "You marked this as resolved") and
-// overriding them with a generic label would hide exactly the detail a
-// passenger most wants to see there.
-const ACTION_TYPE_LABEL: Record<string, string> = {
-  ANALYZE_IMPACT: 'Checking what this affects',
-  FIND_CONTACT: 'Looking up contact information',
-  CONTACT_PROVIDER: 'Reaching out to a provider',
-  REQUEST_RESCHEDULE: 'Requesting a new time',
-  UPDATE_ITINERARY: 'Updating your itinerary',
-  NOTIFY_PASSENGER: 'Sending you an update',
-  SEARCH_ALTERNATIVES: 'Looking for other options',
-  ESCALATE: 'Flagging something for you',
-}
-
 const TONE_COLOR: Record<string, { bg: string; fg: string }> = {
   progress: { bg: 'rgba(74,160,216,0.12)', fg: '#4aa0d8' },
   attention: { bg: 'rgba(212,168,83,0.15)', fg: '#d4a853' },
   resolved: { bg: 'rgba(82,183,136,0.12)', fg: '#52b788' },
   idle: { bg: 'rgba(255,255,255,0.06)', fg: 'rgba(255,255,255,0.5)' },
-}
-
-function toneOf(status: string): keyof typeof TONE_COLOR {
-  return STATUS_COPY[status]?.tone ?? 'progress'
 }
 
 function isTerminal(status: string) {
@@ -162,9 +124,7 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
   const colors = TONE_COLOR[tone]
 
   const latestAction = headlineRun?.actions[headlineRun.actions.length - 1] ?? null
-  const latestActionLabel = latestAction
-    ? ACTION_TYPE_LABEL[latestAction.type as AgentActionType] ?? latestAction.description
-    : null
+  const latestActionLabel = latestAction ? actionLabel(latestAction.type, latestAction.description) : null
 
   // Most recent run gets its full timeline shown right away; anything
   // older is a single collapsed row until explicitly clicked open — a
