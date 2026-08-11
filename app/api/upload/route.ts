@@ -153,6 +153,7 @@ export async function POST(req: Request) {
       },
     }, { status: 201 })
   } catch (err) {
+    console.error('Document extraction failed', { documentId: document.id, err })
     await prisma.document.update({
       where: { id: document.id },
       data: { status: 'FAILED', extractionError: err instanceof Error ? err.message : 'Unknown extraction error' },
