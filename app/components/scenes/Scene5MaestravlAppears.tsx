@@ -41,9 +41,7 @@ export default function Scene5MaestravlAppears({ progress }: SceneProps) {
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6 gap-10">
         {/* Logo appear */}
         <motion.div style={{ scale: logoScale, opacity: logoOpacity }} className="flex flex-col items-center gap-3 text-center">
-          <div style={{ background: 'rgba(255,255,255,0.92)', borderRadius: 20, padding: '20px 32px' }}>
-            <img src="/maestravl-logo.png" alt="Maestravl" style={{ height: 96, width: 'auto', display: 'block' }} />
-          </div>
+          <img src="/maestravl-logo.png" alt="Maestravl" style={{ height: 96, width: 'auto', display: 'block' }} />
           <p className="text-label text-white/40">Autonomous coordination</p>
         </motion.div>
 
