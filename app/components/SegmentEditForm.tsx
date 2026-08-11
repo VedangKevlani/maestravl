@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import type { PassengerDTO, SegmentDTO } from './types'
 import { toLocalInputValue as toLocalInput } from './dateInput'
+import { getFieldProfile } from './segmentFieldProfiles'
 
 const fieldClass = 'glass-card px-3.5 py-2.5 text-editorial text-white bg-transparent outline-none w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 const labelClass = 'text-label text-white/40'
@@ -29,6 +30,7 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const profile = getFieldProfile(segment.transportType)
 
   function set(name: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [name]: value }))
@@ -80,30 +82,41 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
           <span className={labelClass}>Identifier</span>
           <input className={fieldClass} value={form.identifier} onChange={(e) => set('identifier', e.target.value)} />
         </label>
+        {profile.hasRoute ? (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>{profile.departureLocationLabel}</span>
+              <input className={fieldClass} value={form.departureLocation} onChange={(e) => set('departureLocation', e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>{profile.arrivalLocationLabel}</span>
+              <input className={fieldClass} value={form.arrivalLocation} onChange={(e) => set('arrivalLocation', e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>{profile.departureCodeLabel}</span>
+              <input className={fieldClass} value={form.departureLocationCode} onChange={(e) => set('departureLocationCode', e.target.value.toUpperCase())} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>{profile.arrivalCodeLabel}</span>
+              <input className={fieldClass} value={form.arrivalLocationCode} onChange={(e) => set('arrivalLocationCode', e.target.value.toUpperCase())} />
+            </label>
+          </>
+        ) : (
+          <label className="flex flex-col gap-1.5 sm:col-span-2">
+            <span className={labelClass}>{profile.singleLocationLabel}</span>
+            <input className={fieldClass} value={form.departureLocation} onChange={(e) => set('departureLocation', e.target.value)} />
+          </label>
+        )}
         <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Departure location</span>
-          <input className={fieldClass} value={form.departureLocation} onChange={(e) => set('departureLocation', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Arrival location</span>
-          <input className={fieldClass} value={form.arrivalLocation} onChange={(e) => set('arrivalLocation', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Departure code</span>
-          <input className={fieldClass} value={form.departureLocationCode} onChange={(e) => set('departureLocationCode', e.target.value.toUpperCase())} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Arrival code</span>
-          <input className={fieldClass} value={form.arrivalLocationCode} onChange={(e) => set('arrivalLocationCode', e.target.value.toUpperCase())} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Departure time</span>
+          <span className={labelClass}>{profile.departureTimeLabel}</span>
           <input type="datetime-local" className={fieldClass} value={form.departureTime} onChange={(e) => set('departureTime', e.target.value)} />
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Arrival time</span>
-          <input type="datetime-local" className={fieldClass} value={form.arrivalTime} onChange={(e) => set('arrivalTime', e.target.value)} />
-        </label>
+        {profile.arrivalTimeLabel && (
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>{profile.arrivalTimeLabel}</span>
+            <input type="datetime-local" className={fieldClass} value={form.arrivalTime} onChange={(e) => set('arrivalTime', e.target.value)} />
+          </label>
+        )}
         <label className="flex flex-col gap-1.5 sm:col-span-2">
           <span className={labelClass}>Timezone (where this actually happens — matters for messages sent on your behalf)</span>
           <div className="flex gap-2">
@@ -123,22 +136,30 @@ export default function SegmentEditForm({ segment, passengers, onDone, onCancel 
             </button>
           </div>
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Terminal</span>
-          <input className={fieldClass} value={form.departureTerminal} onChange={(e) => set('departureTerminal', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Gate</span>
-          <input className={fieldClass} value={form.departureGate} onChange={(e) => set('departureGate', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Seat</span>
-          <input className={fieldClass} value={form.seat} onChange={(e) => set('seat', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClass}>Cabin</span>
-          <input className={fieldClass} value={form.cabin} onChange={(e) => set('cabin', e.target.value)} />
-        </label>
+        {profile.hasRoute && profile.hasTerminalGate && (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Terminal</span>
+              <input className={fieldClass} value={form.departureTerminal} onChange={(e) => set('departureTerminal', e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Gate</span>
+              <input className={fieldClass} value={form.departureGate} onChange={(e) => set('departureGate', e.target.value)} />
+            </label>
+          </>
+        )}
+        {profile.hasRoute && profile.hasSeatCabin && (
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Seat</span>
+              <input className={fieldClass} value={form.seat} onChange={(e) => set('seat', e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Cabin</span>
+              <input className={fieldClass} value={form.cabin} onChange={(e) => set('cabin', e.target.value)} />
+            </label>
+          </>
+        )}
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Confirmation number</span>
           <input className={fieldClass} value={form.confirmationNumber} onChange={(e) => set('confirmationNumber', e.target.value)} />
