@@ -5,13 +5,21 @@ const nextConfig = {
   // breaks that (Tesseract.js's worker script goes missing in .next/server).
   // Keeping them external means Next.js requires them directly instead.
   serverExternalPackages: ['tesseract.js', '@napi-rs/canvas', 'pdfjs-dist'],
-  // pdfjs-dist loads @napi-rs/canvas itself via a dynamic `createRequire()`
-  // call (needed for its DOMMatrix/Path2D Node polyfill), which Vercel's
-  // build-time file tracer doesn't follow — the package gets built locally
-  // but silently dropped from the deployed function, throwing "Cannot find
-  // module '@napi-rs/canvas'" at runtime. Force-include it explicitly.
+  // pdfjs-dist and tesseract.js both pull in files Vercel's build-time file
+  // tracer can't see statically: pdfjs-dist loads @napi-rs/canvas via a
+  // dynamic `createRequire()` call (its DOMMatrix/Path2D Node polyfill) and
+  // loads its own pdf.worker.mjs the same indirect way; tesseract.js-core's
+  // .js wrappers each load a same-named .wasm binary the tracer doesn't
+  // follow either. All of these built locally but were silently dropped
+  // from the deployed function, throwing "Cannot find module" at runtime.
+  // Force-include them explicitly.
   outputFileTracingIncludes: {
-    '/api/upload': ['./node_modules/@napi-rs/canvas*/**/*'],
+    '/api/upload': [
+      './node_modules/@napi-rs/canvas*/**/*',
+      './node_modules/pdfjs-dist/legacy/build/**/*',
+      './node_modules/tesseract.js-core/**/*',
+      './node_modules/tesseract.js/src/worker-script/**/*',
+    ],
   },
 };
 
