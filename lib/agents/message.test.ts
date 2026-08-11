@@ -89,6 +89,35 @@ describe('composeRescheduleRequest', () => {
     })
     expect(body).toContain('UTC')
   })
+
+  it('mentions a backup time when given one, and asks about "either" rather than a single change', () => {
+    const { body } = composeRescheduleRequest({
+      segmentLabel: 'Airport transfer',
+      confirmationNumber: null,
+      originalTime: null,
+      proposedTime: new Date('2026-12-15T18:00:00Z'),
+      alternativeTime: new Date('2026-12-15T18:45:00Z'),
+      timezone: 'UTC',
+      reasonText: 'x',
+    })
+    expect(body).toContain('Preferred new time:')
+    expect(body).toContain("Alternative, if that doesn't work:")
+    expect(body).toContain('Could you please confirm whether either of these times would work?')
+    expect(body.toLowerCase()).not.toContain('confirmed.')
+  })
+
+  it('omits any mention of an alternative when none is given', () => {
+    const { body } = composeRescheduleRequest({
+      segmentLabel: 'Airport transfer',
+      confirmationNumber: null,
+      originalTime: null,
+      proposedTime: new Date('2026-12-15T18:00:00Z'),
+      timezone: 'UTC',
+      reasonText: 'x',
+    })
+    expect(body).not.toContain('Alternative')
+    expect(body).toContain('Requested new time:')
+  })
 })
 
 describe('composeAwarenessInquiry', () => {

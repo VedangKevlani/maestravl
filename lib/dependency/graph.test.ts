@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateImpact, calculateCancellationImpact, type DependencySegment } from './graph'
+import { calculateImpact, calculateCancellationImpact, rankAlternatives, type DependencySegment } from './graph'
 
 const HOUR = 60 * 60 * 1000
 const base = new Date('2026-12-15T12:00:00Z')
@@ -119,5 +119,52 @@ describe('calculateCancellationImpact', () => {
     const flight = seg('flight', 1, new Date(base.getTime() + HOUR), null)
     expect(calculateCancellationImpact([hotel, flight], 'flight')).toEqual([])
     expect(calculateCancellationImpact([hotel, flight], 'missing')).toEqual([])
+  })
+})
+
+describe('rankAlternatives', () => {
+  const MINUTE = 60 * 1000
+
+  it('returns nothing for an unknown affected segment id', () => {
+    const transfer = seg('transfer', 0, base, base, 'TAXI')
+    expect(rankAlternatives([transfer], 'missing', base)).toEqual([])
+  })
+
+  it('offers a 45-minute-later backup option, and NONE downstream impact when nothing follows', () => {
+    const transfer = seg('transfer', 0, base, base, 'TAXI')
+    const proposed = new Date(base.getTime() + 3 * HOUR)
+    const [optionA, optionB] = rankAlternatives([transfer], 'transfer', proposed)
+
+    expect(optionA).toMatchObject({ label: 'Option A', proposedTime: proposed, downstreamImpact: 'NONE', rank: 1 })
+    expect(optionB.proposedTime).toEqual(new Date(proposed.getTime() + 45 * MINUTE))
+    expect(optionB).toMatchObject({ label: 'Option B', downstreamImpact: 'NONE', rank: 2 })
+  })
+
+  it('flags the backup option MAJOR when it would overrun the next segment, even though the primary option is only MINOR', () => {
+    // Option B is always exactly 45m later than option A (same downstream
+    // segment, same duration), so it can only match or worsen option A's
+    // impact — never improve it. Hotel 20m after the primary proposed
+    // time: option A has a 20m buffer (MINOR), option B is 25m negative
+    // (MAJOR).
+    const transfer = seg('transfer', 0, base, base, 'TAXI')
+    const proposed = new Date(base.getTime() + 3 * HOUR)
+    const hotel = seg('hotel', 1, new Date(proposed.getTime() + 20 * MINUTE), null, 'HOTEL')
+
+    const [optionA, optionB] = rankAlternatives([transfer, hotel], 'transfer', proposed)
+    expect(optionA.downstreamImpact).toBe('MINOR')
+    expect(optionB.downstreamImpact).toBe('MAJOR')
+  })
+
+  it('flags MINOR on the backup option when the primary option is comfortably NONE', () => {
+    // Hotel 150m after the primary proposed time: option A's 150m buffer
+    // is comfortably NONE; option B's 105m (150 - 45) buffer is inside the
+    // 120m warning band, so MINOR.
+    const transfer = seg('transfer', 0, base, base, 'TAXI')
+    const proposed = new Date(base.getTime() + 3 * HOUR)
+    const hotel = seg('hotel', 1, new Date(proposed.getTime() + 150 * MINUTE), null, 'HOTEL')
+
+    const [optionA, optionB] = rankAlternatives([transfer, hotel], 'transfer', proposed)
+    expect(optionA.downstreamImpact).toBe('NONE')
+    expect(optionB.downstreamImpact).toBe('MINOR')
   })
 })

@@ -66,9 +66,15 @@ export function composeRescheduleRequest(input: {
   /** IANA zone (e.g. "America/Los_Angeles") for the segment being rescheduled — this is the provider's own location, which is what matters to them, not wherever Maestravl's server happens to run. Null renders times in UTC, labeled honestly rather than guessing. */
   timezone: string | null
   reasonText: string
+  /** A later fallback time (see lib/dependency/graph.ts's rankAlternatives) offered as a second option — gives the provider something to say yes to if the primary ask doesn't work, rather than a flat no. Omitted entirely when there's no meaningful alternative to offer. */
+  alternativeTime?: Date | null
 }): ComposedMessage {
   const bookingLine = input.confirmationNumber ? ` (Booking ${input.confirmationNumber})` : ''
   const subject = `Request to reschedule — ${input.segmentLabel}${bookingLine}`
+
+  const confirmLine = input.alternativeTime
+    ? `Could you please confirm whether either of these times would work?`
+    : 'Could you please confirm whether this change is possible?'
 
   const body = [
     'Hello,',
@@ -76,11 +82,12 @@ export function composeRescheduleRequest(input: {
     input.reasonText,
     '',
     ...(input.originalTime ? ['Original time:', formatTime(input.originalTime, input.timezone), ''] : []),
-    'Requested new time:',
+    input.alternativeTime ? 'Preferred new time:' : 'Requested new time:',
     formatTime(input.proposedTime, input.timezone),
     '',
+    ...(input.alternativeTime ? ['Alternative, if that doesn\'t work:', formatTime(input.alternativeTime, input.timezone), ''] : []),
     ...(input.confirmationNumber ? ['Booking:', input.confirmationNumber, ''] : []),
-    'Could you please confirm whether this change is possible?',
+    confirmLine,
     '',
     'Thank you,',
     'Maestravl, coordinating on behalf of the passenger',

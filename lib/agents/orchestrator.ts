@@ -34,8 +34,8 @@ import { buildReplyAddress } from '@/lib/inboundReplyAddress'
 import { planAnalysis, type PlannerSegment } from './analyze'
 import { classifyActionRisk, canAutoExecute } from './policy'
 import { findOrDiscoverContact, isAutoContactable, type ProviderContactRecord } from './contact'
-import { describeDisruptionReason, composeRescheduleRequest, composeAwarenessInquiry } from './message'
-import type { SegmentImpact } from '@/lib/dependency/graph'
+import { describeDisruptionReason, composeRescheduleRequest, composeAwarenessInquiry, formatTime } from './message'
+import { rankAlternatives, type SegmentImpact } from '@/lib/dependency/graph'
 import type { MonitoringCheckStatus } from '@/lib/monitoring/types'
 import type { AgentActionType, AgentActionStatus } from '@/lib/constants'
 import type { Prisma } from '@prisma/client'
@@ -141,9 +141,10 @@ async function runAnalysis(agentRunId: string) {
   const disruptedSegment = trip.segments.find((s) => s.id === run.disruption.segmentId)
   if (!disruptedSegment) throw new Error(`Disrupted segment not found: ${run.disruption.segmentId}`)
 
+  const plannerSegments = trip.segments.map(toPlannerSegment)
   const plan = planAnalysis(
     toPlannerSegment(disruptedSegment),
-    trip.segments.map(toPlannerSegment),
+    plannerSegments,
     run.disruption.newStatus as MonitoringCheckStatus,
     run.disruption.delayMinutes
   )
@@ -171,7 +172,7 @@ async function runAnalysis(agentRunId: string) {
   for (const impact of plan.affected) {
     const segment = trip.segments.find((s) => s.id === impact.segmentId)
     if (!segment) continue
-    contactResults.push(await contactProvider(agentRunId, segment, impact, reasonText))
+    contactResults.push(await contactProvider(agentRunId, segment, impact, reasonText, plannerSegments))
   }
 
   await notifyPassengersOfImpact(agentRunId, trip, disruptedSegment, run.disruption, plan.summary, contactResults)
@@ -198,7 +199,8 @@ async function contactProvider(
   agentRunId: string,
   segment: SegmentRow,
   impact: SegmentImpact,
-  reasonText: string
+  reasonText: string,
+  allSegments: PlannerSegment[]
 ): Promise<ContactOutcome> {
   const label = segmentLabel(segment)
   const contact = await findOrDiscoverContact(segment.id)
@@ -222,7 +224,43 @@ async function contactProvider(
     return { impact, segment, contacted: false }
   }
 
-  return sendContactRequest(agentRunId, segment, impact, contact, label, reasonText)
+  return sendContactRequest(agentRunId, segment, impact, contact, label, reasonText, allSegments)
+}
+
+/**
+ * Rescheduling Agent (spec section 8) for a DIRECT impact: ranks a primary
+ * ask plus a modest fallback (see rankAlternatives), persists both as
+ * Alternative rows for the audit trail, and returns the fallback time (or
+ * null) for composeRescheduleRequest to fold into the actual message. Only
+ * ever proposes times Maestravl computed itself — never a claim about real
+ * provider availability, which nothing in this codebase can check.
+ */
+async function proposeAlternatives(agentRunId: string, segment: SegmentRow, label: string, shiftedStart: Date, allSegments: PlannerSegment[]): Promise<Date | null> {
+  const options = rankAlternatives(allSegments, segment.id, shiftedStart)
+  if (options.length === 0) return null
+
+  await prisma.alternative.createMany({
+    data: options.map((o) => ({
+      agentRunId,
+      segmentId: segment.id,
+      label: o.label,
+      proposedTime: o.proposedTime,
+      downstreamImpact: o.downstreamImpact,
+      rank: o.rank,
+      selected: o.rank === 1,
+    })),
+  })
+
+  const [primary, backup] = options
+  await logAction(agentRunId, {
+    type: 'SEARCH_ALTERNATIVES',
+    segmentId: segment.id,
+    description: backup
+      ? `Considered timing options for ${label} — asking for ${formatTime(primary.proposedTime, segment.timezone)}, with ${formatTime(backup.proposedTime, segment.timezone)} as a fallback.`
+      : `Considered timing options for ${label}.`,
+  })
+
+  return backup?.proposedTime ?? null
 }
 
 async function sendContactRequest(
@@ -231,14 +269,20 @@ async function sendContactRequest(
   impact: SegmentImpact,
   contact: ProviderContactRecord,
   label: string,
-  reasonText: string
+  reasonText: string,
+  allSegments: PlannerSegment[]
 ): Promise<ContactOutcome> {
+  const alternativeTime = impact.shiftedStart
+    ? await proposeAlternatives(agentRunId, segment, label, impact.shiftedStart, allSegments)
+    : null
+
   const message = impact.shiftedStart
     ? composeRescheduleRequest({
         segmentLabel: label,
         confirmationNumber: segment.confirmationNumber,
         originalTime: segment.departureTime ?? segment.arrivalTime,
         proposedTime: impact.shiftedStart,
+        alternativeTime,
         timezone: segment.timezone,
         reasonText,
       })

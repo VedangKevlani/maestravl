@@ -311,12 +311,26 @@ proposes a reschedule *with a fee* until a provider's reply is processed.
   rather than Maestravl guessing at the outcome. Same honesty boundary as
   everywhere else in this file.
 
-**Not yet built:** the alternatives-ranking agent (spec section 8 — right
-now there's exactly one proposed time per DIRECT impact, not a ranked set
-of options), and using a reply's content to actually update the itinerary
-(`AgentRun.status` has a `RESCHEDULING` value reserved for this — nothing
-produces it yet, since that requires *interpreting* a reply, not just
-detecting one).
+**Alternatives (spec section 8, `rankAlternatives` in
+`lib/dependency/graph.ts`):** for a DIRECT impact, Maestravl now proposes
+two options rather than one — "Option A" is always the exact `shiftedStart`
+(the least disruptive possible ask, since anything later can only match or
+worsen downstream impact, never improve it), "Option B" is a 45-minute
+safety-margin fallback. Both are persisted as `Alternative` rows (rank 1
+selected, rank 2 not) and both get a `downstreamImpact` classification
+against whatever segment comes next, computed with the same cascade math
+as `calculateImpact` — not a live availability check, since nothing in
+this codebase can ask a provider what times they actually have.
+`composeRescheduleRequest` folds the backup into the same email as a
+second option ("Could you confirm whether either of these times would
+work?") rather than sending two separate asks.
+
+**Not yet built:** using a reply's content to actually update the
+itinerary (`AgentRun.status` has a `RESCHEDULING` value reserved for this —
+nothing produces it yet, since that requires *interpreting* a reply, not
+just detecting one), and picking between Option A/B based on which one the
+provider actually said yes to (currently nothing reads the reply well
+enough to know).
 
 ## Passenger-facing recovery status
 
@@ -332,6 +346,11 @@ stressful situation. Current design:
   infrastructure in this stack, and polling a handful of trips this
   infrequently is cheap).
 - Full history is opt-in behind "View all activity," not shown by default.
+  Once opened, only the *most recent* disruption's timeline is expanded —
+  earlier disruptions collapse into single summary rows (segment, status,
+  update count, relative time) that only expand their own history when
+  individually clicked, so a trip with several past disruptions doesn't
+  dump everything at once.
 - "Heard back?" appears whenever a run is genuinely waiting on someone
   (`WAITING_FOR_RESPONSE`/`ACTION_REQUIRED`) — the manual-resolve escape
   hatch described above.

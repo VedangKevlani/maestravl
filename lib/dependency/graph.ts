@@ -175,3 +175,60 @@ export function calculateCancellationImpact(
     reason: 'The segment it connects from was cancelled.',
   }))
 }
+
+// How much later than the primary proposed time the backup option asks
+// for — a modest safety margin in case the passenger's actual arrival
+// slips further, not a second guess at the delay itself.
+const ALTERNATIVE_BUFFER_MINUTES = 45
+
+export interface AlternativeOption {
+  label: string
+  proposedTime: Date
+  /** Effect on the *next* segment after the affected one if this option were used instead of the primary ask — NONE if there's nothing after it, or nothing that would notice. */
+  downstreamImpact: 'NONE' | 'MINOR' | 'MAJOR'
+  rank: number
+}
+
+/**
+ * Rescheduling Agent (spec section 8) — deterministic, not a live
+ * availability check (nothing in this codebase can ask a hotel/restaurant
+ * "what times do you have"). Rank 1 is always the exact time computed by
+ * calculateImpact (the least disruptive possible ask, since anything later
+ * can only match or worsen downstream impact — never improve it). Rank 2
+ * is a modest buffer past that, offered as a fallback in case the
+ * passenger's actual arrival slips further than expected, so the provider
+ * has an alternative to say yes to instead of a flat no.
+ */
+export function rankAlternatives(
+  segments: DependencySegment[],
+  affectedSegmentId: string,
+  primaryProposedTime: Date
+): AlternativeOption[] {
+  const ordered = [...segments].sort((a, b) => a.order - b.order)
+  const index = ordered.findIndex((s) => s.id === affectedSegmentId)
+  if (index === -1) return []
+
+  const affected = ordered[index]
+  const affectedStart = effectiveStart(affected)
+  const affectedEnd = effectiveEnd(affected)
+  const durationMs = affectedStart && affectedEnd ? affectedEnd.getTime() - affectedStart.getTime() : 0
+
+  const next = ordered[index + 1]
+  const nextStart = next ? effectiveStart(next) : null
+
+  function downstreamImpactOf(candidateStart: Date): AlternativeOption['downstreamImpact'] {
+    if (!nextStart) return 'NONE'
+    const candidateEnd = new Date(candidateStart.getTime() + durationMs)
+    const bufferMinutes = Math.round((nextStart.getTime() - candidateEnd.getTime()) / MS_PER_MINUTE)
+    if (bufferMinutes < 0) return 'MAJOR'
+    if (bufferMinutes <= WARNING_BUFFER_MINUTES) return 'MINOR'
+    return 'NONE'
+  }
+
+  const backupTime = new Date(primaryProposedTime.getTime() + ALTERNATIVE_BUFFER_MINUTES * MS_PER_MINUTE)
+
+  return [
+    { label: 'Option A', proposedTime: primaryProposedTime, downstreamImpact: downstreamImpactOf(primaryProposedTime), rank: 1 },
+    { label: 'Option B', proposedTime: backupTime, downstreamImpact: downstreamImpactOf(backupTime), rank: 2 },
+  ]
+}
