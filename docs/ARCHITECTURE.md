@@ -78,13 +78,15 @@ every transport type implements:
 
 ```
 MonitoringAdapter
-  ├─ flightAdapter   (lib/monitoring/adapters/flightAdapter.ts)
+  ├─ flightAdapter   (lib/monitoring/adapters/flightAdapter.ts) — real
   │    └─ rotates across flight/aviationStack.ts, flight/aeroDataBox.ts —
   │       see "Scheduled monitoring checks" in docs/INTEGRATION.md
-  ├─ trainAdapter
-  ├─ busAdapter
-  ├─ boatAdapter     (covers ferry, cruise, boat)
-  └─ taxiAdapter     (covers taxi, rental car)
+  ├─ trainAdapter    (lib/monitoring/adapters/trainAdapter.ts) — real
+  ├─ busAdapter      (lib/monitoring/adapters/busAdapter.ts) — real
+  │    └─ both are the transitland/ factory (see below), gtfsRouteType
+  │       is the only difference between them
+  ├─ boatAdapter     (covers ferry, cruise, boat) — stub
+  └─ taxiAdapter     (covers taxi, rental car) — stub
 ```
 
 `lib/monitoring/registry.ts` maps a `TransportType` to its adapter. Adding a
@@ -99,12 +101,42 @@ once one runs dry (or errors). Adding another provider means writing one
 `FlightProviderAdapter` (see `flight/types.ts`) and listing it in
 `flightAdapter.ts`'s `PROVIDERS` array.
 
-**Current status: none of these are connected to a live provider.** Each
-adapter's `isConfigured()` checks for an environment variable (e.g.
-`FLIGHT_MONITORING_API_KEY`); until that's set, `check()` returns
-`{ status: 'UNKNOWN', message: '...not connected yet...' }` rather than
-fabricating data. See `docs/INTEGRATION.md` for realistic next steps per
-transport mode.
+**Train/bus (`lib/monitoring/adapters/transitland/`):** backed by
+[Transitland](https://transit.land), a free-tier (10,000 REST queries/month)
+aggregator of GTFS/GTFS-realtime for 55+ countries — one `TRANSITLAND_API_KEY`
+covers both. `createTransitlandAdapter({ id, supports, gtfsRouteType })` in
+`transitlandAdapter.ts` is the shared factory; `trainAdapter.ts`/`busAdapter.ts`
+are one-line instantiations (`gtfsRouteType: 2` rail / `3` bus, per the GTFS
+spec — a best-effort filter, not exhaustive). `check()`: search Transitland
+operators for `segment.provider`, search that operator's routes for
+`segment.identifier` (both matched via the pure, unit-tested
+`pickBestOperatorMatch`/`pickBestRouteMatch` in `matching.ts` — normalized
+substring matching that returns `null` rather than guessing a low-confidence
+match), then classify the matched route's active GTFS-RT alerts
+(`classifyAlerts` — prefers the structured `effect` field, falls back to
+text-keyword matching, only fills `delayMinutes` when an explicit figure is
+in the alert text, never fabricated). Quota tracked via the same
+`ProviderUsage` table/helpers (`flight/usage.ts`) flights already use, under
+`provider: 'transitland'`.
+
+The real constraint isn't the API, it's the data: `lib/extraction/parse.ts`
+only ever fills `identifier`/`provider` for flight-number-shaped text, so an
+auto-extracted TRAIN/BUS segment has both null and the adapter honestly
+reports `noMatch` with a message telling the passenger to fill in the
+operator + train/bus number (Edit) — real monitoring only starts once a
+human does that. This mirrors how AeroDataBox's `noMatch` already works for
+a flight the provider simply doesn't carry, extended to a broader "not
+enough identifying data yet" case.
+
+**Rental car / taxi / ferry / cruise: still stubs.** Researched this session
+— no free, self-serve status API exists for rental cars or taxi dispatch
+(Avis/Booking.com/OpenNDC are all partner-agreement-gated); ferry/cruise
+operators mostly don't expose public APIs at all. See `docs/INTEGRATION.md`
+for what was checked, so it isn't re-researched from scratch later.
+`taxiAdapter.ts`/`boatAdapter.ts`'s `isConfigured()` still checks an env var
+purely to phrase an honest "not connected" message — there's no real
+provider behind either, and `/system-health` reports both as "not
+implemented" rather than merely unconfigured.
 
 ## Data model
 
@@ -369,6 +401,51 @@ provider actually said yes to — `classifyReply` reads intent (accepted/
 declined/counter-offer), not which specific proposed time was accepted, so
 `confirm-reschedule` always applies the primary `RescheduleRequest.requestedTime`
 regardless of whether the reply meant Option A or Option B.
+
+## Ground transport suggestion ("Get an Uber there")
+
+`lib/uber.ts` + `app/components/SegmentCard.tsx` — a deep link into Uber's
+own app/website with pickup/dropoff prefilled, **not a real booking**.
+Investigated actually booking through Uber's API (Riders API / Guest Rides)
+first: both are book-and-track — they only know about rides Uber itself
+created via the API, so they can't check the status of a ride booked some
+other way, which is what monitoring an existing `TAXI`/`RENTAL_CAR` segment
+would need. Real in-app booking would also be a materially bigger feature —
+an actual fare charged per ride, and this codebase has no payment
+infrastructure anywhere — so it's deliberately left as an open product
+question rather than built.
+
+The deep link itself (`https://m.uber.com/looking?client_id=...&pickup=...&drop[0]=...`)
+needs no Uber API calls and no business approval — just a free `client_id`
+from Uber's developer dashboard (creating an app there is unprivileged;
+approval is only required for scopes this never uses, like actually
+requesting a ride). `isUberConfigured()` checks `NEXT_PUBLIC_UBER_CLIENT_ID`
+rather than a server-only var like every other integration in this file —
+it has to run in `SegmentCard.tsx`, a client component, and unlike a real
+API key the client_id isn't a secret (it's a visible query parameter in the
+link itself). `locationText()` builds pickup/dropoff from whatever
+free-text location or airport-dictionary lookup is available — Maestravl
+has no coordinates for any segment, so the link is built from address text
+only, and returns `null` (no button rendered) rather than fabricating a
+location.
+
+Shown directly on a `SegmentCard` when that segment's own status is
+`DELAYED`/`CANCELLED` and there's a next segment with a resolvable
+departure location — pickup is this segment's arrival, dropoff is the next
+segment's departure. This is a deliberate simplification: it doesn't
+consult the dependency engine's actual impact analysis (`SegmentImpact` /
+`plan.affected` in `lib/dependency/graph.ts`/`orchestrator.ts`), which
+isn't currently exposed to the client at all (`GET /api/trips/[id]/activity`
+only returns `AgentAction.description` prose, not `segmentId`) — a tighter
+version scoped to "only during an active AgentRun for this exact
+connection" is a natural follow-up once that route exposes structured
+segment data instead of just text.
+
+The exact deep-link URL format was read from Uber's own docs page as of
+2026-08, but a secondary source referenced a different path
+(`m.uber.com/ul/?action=setPickup...`) and neither was confirmed against a
+live click-through — no `client_id` was available while building this.
+Worth a manual check the first time a real key is set.
 
 ## Passenger-facing recovery status
 

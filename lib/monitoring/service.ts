@@ -61,6 +61,8 @@ export async function initializeMonitoringForSegment(segmentId: string) {
     identifier: segment.identifier,
     departureLocationCode: segment.departureLocationCode,
     arrivalLocationCode: segment.arrivalLocationCode,
+    departureLocation: segment.departureLocation,
+    arrivalLocation: segment.arrivalLocation,
     departureTime: segment.departureTime,
     arrivalTime: segment.arrivalTime,
   }
@@ -193,6 +195,8 @@ export async function runMonitoringCheck(segmentId: string) {
     identifier: segment.identifier,
     departureLocationCode: segment.departureLocationCode,
     arrivalLocationCode: segment.arrivalLocationCode,
+    departureLocation: segment.departureLocation,
+    arrivalLocation: segment.arrivalLocation,
     departureTime: segment.departureTime,
     arrivalTime: segment.arrivalTime,
   }

@@ -28,6 +28,9 @@ export interface MonitorableSegment {
   identifier: string | null
   departureLocationCode: string | null
   arrivalLocationCode: string | null
+  /** Free-text city/station name (not an airport code) — mostly unset for flights, which rely on the *Code fields, but useful context for the transit adapters (lib/monitoring/adapters/transitland/), which have no code dictionary to work from. */
+  departureLocation: string | null
+  arrivalLocation: string | null
   departureTime: Date | null
   arrivalTime: Date | null
 }

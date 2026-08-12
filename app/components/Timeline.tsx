@@ -53,8 +53,8 @@ export default function Timeline({ tripId, segments, passengers }: { tripId: str
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">
-            {items.map((segment) => (
-              <SegmentCard key={segment.id} segment={segment} passengers={passengers} />
+            {items.map((segment, i) => (
+              <SegmentCard key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} />
             ))}
           </div>
         </SortableContext>

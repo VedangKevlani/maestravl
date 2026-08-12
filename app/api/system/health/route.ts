@@ -23,6 +23,7 @@ export async function GET() {
     inboundCommsCount,
     recentMonitoringCheck,
     recentFlightCheck,
+    transitCandidates,
     webLookupContactCount,
   ] = await Promise.all([
     prisma.communication.count({ where: { direction: 'OUTBOUND', status: { in: ['SENT', 'RESPONDED'] } } }),
@@ -36,8 +37,30 @@ export async function GET() {
       where: { apiProvider: 'flight-adapter-v1', status: { not: 'NOT_CONFIGURED' }, lastCheckedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
       select: { lastCheckedAt: true },
     }),
+    // `status: 'ACTIVE'` alone isn't real evidence here — it just means
+    // TRANSITLAND_API_KEY is set (see runMonitoringCheck in
+    // lib/monitoring/service.ts), the same as a segment that's missing its
+    // operator/number and always resolves to an honest `noMatch`. Real
+    // confirmation requires actually parsing lastKnownData to check a
+    // check genuinely matched an operator+route, not just that the
+    // pipeline ran.
+    prisma.monitoringRecord.findMany({
+      where: { apiProvider: { in: ['train-adapter-v1', 'bus-adapter-v1'] }, trackingKey: { not: null }, lastKnownData: { not: null } },
+      orderBy: { lastCheckedAt: 'desc' },
+      take: 25,
+      select: { lastKnownData: true },
+    }),
     prisma.providerContact.count({ where: { source: 'WEB_LOOKUP' } }),
   ])
+
+  const recentTransitCheck = transitCandidates.some((r) => {
+    try {
+      const parsed = JSON.parse(r.lastKnownData!) as { noMatch?: boolean; status?: string }
+      return !parsed.noMatch && parsed.status !== 'UNKNOWN'
+    } catch {
+      return false
+    }
+  })
 
   const has = (name: string) => Boolean(process.env[name])
 
@@ -72,10 +95,19 @@ export async function GET() {
     },
     {
       id: 'train-bus-monitoring',
-      label: 'Train / bus / ferry / taxi monitoring',
+      label: 'Train / bus monitoring (Transitland)',
+      configured: has('TRANSITLAND_API_KEY'),
+      confirmed: recentTransitCheck,
+      evidence: recentTransitCheck
+        ? 'At least one train/bus segment has been successfully matched and checked'
+        : 'No train/bus segment has resolved to a real match yet — this requires the segment to have its operator name and train/bus number filled in (Edit), not just this key being set.',
+    },
+    {
+      id: 'car-taxi-monitoring',
+      label: 'Rental car / taxi / ferry / cruise monitoring',
       configured: false,
       confirmed: false,
-      evidence: 'Not implemented — these adapters are stubs regardless of env vars. See docs/INTEGRATION.md for why (no generic free API exists per-mode the way AviationStack does for flights).',
+      evidence: 'Not implemented — no free, self-serve status API was found for any of these (car-rental and dispatch APIs are all partner/commercial-agreement-gated). See docs/INTEGRATION.md.',
       notImplemented: true,
     },
     {

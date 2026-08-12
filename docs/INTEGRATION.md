@@ -148,21 +148,57 @@ auto-disables scheduled workflows after 60 days with no repo activity (any
 push resets the clock). For a real-user-facing feature, periodically check
 the Actions tab isn't silently disabled.
 
-## Connecting live train/bus monitoring
+## Live train/bus monitoring (built)
 
-Many transit agencies publish free **GTFS-realtime** feeds (a standard
-protobuf format). `lib/monitoring/adapters/trainAdapter.ts` and
-`busAdapter.ts` are the two stub adapters to fill in; the approach is the
-same as flights — implement `check()`, gate it behind an env var.
+`lib/monitoring/adapters/trainAdapter.ts` and `busAdapter.ts` are real,
+backed by [Transitland](https://transit.land) (`lib/monitoring/adapters/transitland/`)
+— a free-tier aggregator of GTFS/GTFS-realtime data for 55+ countries
+(confirmed: 10,000 REST queries/month, GTFS-Realtime included, no separate
+paywall for it). One `TRANSITLAND_API_KEY` env var covers both transport
+types; see `.env.example` for sign-up details.
 
-## Connecting ferry/cruise/maritime monitoring
+Two honest constraints worth knowing before assuming this "just works" for
+every itinerary:
 
-`boatAdapter.ts` covers `FERRY`, `CRUISE`, and `BOAT`. Most ferry/cruise
-operators don't expose public APIs; the realistic path here is usually a
-per-operator scraper or a manual "confirm this segment's status" flow in the
-UI rather than automated polling. Marine AIS position data (similar to
-OpenSky for aircraft) is available from providers like MarineTraffic if
-position-based inference is worth it later.
+- **A segment only gets checked once it has an operator name and a
+  train/bus number filled in** (`provider`/`identifier` — Edit on the
+  segment). The auto-extraction pipeline (`lib/extraction/parse.ts`) only
+  ever fills those fields in for flight-number-shaped text; TRAIN/BUS
+  segments come out of extraction with both null. This isn't a bug in the
+  adapter — it degrades honestly (`noMatch`, with a message telling the
+  passenger exactly what to add) rather than guessing at a match.
+- **The operator→route lookup is a best-effort text match**
+  (`lib/monitoring/adapters/transitland/matching.ts`, unit-tested), not a
+  guaranteed resolution — an operator/route-number spelling that doesn't
+  resemble what's in Transitland's data (e.g. a regional operator under a
+  different public-facing name) won't match, and correctly reports
+  `UNKNOWN` rather than a wrong status.
+- The exact JSON shape of a Transitland GTFS-RT Alert (the `header_text`/
+  `description_text`/`effect` fields `classifyAlerts` reads) was inferred
+  from GTFS-RT's spec and Transitland's docs, not confirmed against a live
+  response (no API key was available while building this) — worth a
+  sanity check against `/system-health`'s train/bus row once a real key is
+  in place; a shape mismatch fails safe to `UNKNOWN`, not a wrong status.
+- `route_type`/`route_types` as the Transitland query param for filtering
+  rail vs. bus routes is likewise unconfirmed from docs alone — see the
+  comment in `transitland/client.ts`.
+
+## Rental car / taxi / ferry / cruise monitoring (still not built)
+
+Researched 2026-08: **no free, self-serve status API exists** for rental
+cars or taxi dispatch. Avis, Booking.com (Rentalcars Connect), and OpenNDC
+all require a partner/commercial agreement, not a plain developer signup —
+so `lib/monitoring/adapters/taxiAdapter.ts` (covers `TAXI` and
+`RENTAL_CAR`) remains a stub. Don't re-research this from scratch next
+time without checking here first.
+
+`boatAdapter.ts` covers `FERRY`, `CRUISE`, and `BOAT`, also still a stub —
+out of scope for this pass. Most ferry/cruise operators don't expose
+public APIs; the realistic path here is usually a per-operator scraper or
+a manual "confirm this segment's status" flow in the UI rather than
+automated polling. Marine AIS position data (similar to OpenSky for
+aircraft) is available from providers like MarineTraffic if position-based
+inference is worth it later.
 
 ## Upgrading the parser to use a paid LLM
 

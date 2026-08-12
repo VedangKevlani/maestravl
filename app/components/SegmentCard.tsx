@@ -8,6 +8,7 @@ import SegmentEditForm from './SegmentEditForm'
 import { TRANSPORT_ICONS, type PassengerDTO, type SegmentDTO } from './types'
 import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { toLocalInputValue } from './dateInput'
+import { isUberConfigured, locationText, buildUberDeepLink } from '@/lib/uber'
 
 const fieldClassSmall = 'glass-card px-2.5 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 
@@ -62,7 +63,7 @@ interface ReportResult {
   agentRun?: { status: string } | null
 }
 
-export default function SegmentCard({ segment, passengers }: { segment: SegmentDTO; passengers: PassengerDTO[] }) {
+export default function SegmentCard({ segment, passengers, nextSegment }: { segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -82,6 +83,19 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
   const fieldsNeedingReview = Object.entries(confidenceScores).filter(([, v]) => v < 70)
   const checkStatus = parseCheckStatus(segment.monitoring?.lastKnownData ?? null)
   const linkedPassengers = passengers.filter((p) => segment.passengerIds.includes(p.id))
+
+  // A deep link into Uber's own app with pickup/dropoff prefilled — not a
+  // real booking, Maestravl has no payment infrastructure and never touches
+  // money here (see lib/uber.ts). Only offered when this segment is
+  // actually disrupted and there's a real next segment with a resolvable
+  // location to get to; never a dead/fake-looking link.
+  const uberPickup = locationText(segment, 'arrival')
+  const uberDropoff = nextSegment ? locationText(nextSegment, 'departure') : null
+  const clientId = process.env.NEXT_PUBLIC_UBER_CLIENT_ID
+  const uberHref =
+    isUberConfigured() && clientId && (segment.status === 'DELAYED' || segment.status === 'CANCELLED') && uberPickup && uberDropoff
+      ? buildUberDeepLink({ clientId, pickup: uberPickup, dropoff: uberDropoff })
+      : null
 
   async function handleDelete() {
     if (!confirm('Remove this segment from the trip?')) return
@@ -227,6 +241,17 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
           >
             {reportOpen ? 'Cancel' : 'Report a delay'}
           </button>
+          {uberHref && (
+            <a
+              href={uberHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-label text-white/40 hover:text-white/80"
+              style={{ fontSize: '0.6rem' }}
+            >
+              Get an Uber there →
+            </a>
+          )}
         </div>
 
         {reportOpen && (
