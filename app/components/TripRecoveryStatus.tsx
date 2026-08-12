@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { STATUS_COPY, actionLabel, toneOf } from '@/lib/agents/statusCopy'
+import { isTerminalRunStatus } from '@/lib/constants'
 
 interface ActivityAction {
   id: string
@@ -38,10 +39,6 @@ const TONE_COLOR: Record<string, { bg: string; fg: string }> = {
   attention: { bg: 'rgba(212,168,83,0.15)', fg: '#d4a853' },
   resolved: { bg: 'rgba(82,183,136,0.12)', fg: '#52b788' },
   idle: { bg: 'rgba(255,255,255,0.06)', fg: 'rgba(255,255,255,0.5)' },
-}
-
-function isTerminal(status: string) {
-  return status === 'COMPLETED' || status === 'FAILED' || status === 'CONFIRMED'
 }
 
 // Maestravl has no automated way to know a provider actually replied (no
@@ -185,7 +182,7 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
   // loading skeleton; this bar should feel like it's always been there.
   if (runs === null) return null
 
-  const activeRun = runs.find((r) => !isTerminal(r.status))
+  const activeRun = runs.find((r) => !isTerminalRunStatus(r.status))
   const headlineRun = activeRun ?? runs[0] ?? null
   const copy = headlineRun ? STATUS_COPY[headlineRun.status] ?? { headline: headlineRun.status, tone: 'progress' as const } : null
   const tone = runs.length === 0 ? 'idle' : copy?.tone ?? 'progress'
@@ -203,7 +200,7 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
   const bannerText =
     runs.length === 0
       ? 'Maestravl is watching your trip — nothing needs your attention.'
-      : latestActionLabel && !isTerminal(headlineRun!.status)
+      : latestActionLabel && !isTerminalRunStatus(headlineRun!.status)
         ? latestActionLabel
         : copy?.headline
 
@@ -307,6 +304,16 @@ export default function TripRecoveryStatus({ tripId }: { tripId: string }) {
             >
               {expanded ? 'Hide activity' : 'View all activity'}
             </button>
+          )}
+          {runs.length > 0 && (
+            <a
+              href={`/api/trips/${tripId}/activity/pdf`}
+              className="text-label text-white/40 hover:text-white/80 whitespace-nowrap"
+              style={{ fontSize: '0.65rem' }}
+              title="Download this trip's full recovery history as a PDF, for a support conversation"
+            >
+              Download activity log (PDF)
+            </a>
           )}
         </div>
       </div>
