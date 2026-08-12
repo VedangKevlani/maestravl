@@ -2,20 +2,15 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
-import { segmentLabel } from '@/lib/segmentLabel'
+import { confirmReschedule } from '@/lib/agents/confirmReschedule'
 
 // Closes the loop after lib/agents/replyInterpretation.ts reads a provider's
 // reply as a likely yes: the run sits in RESCHEDULING (never auto-CONFIRMED
 // — spec section 20) until the passenger, having read the actual reply via
 // GET .../communications, explicitly accepts or corrects the interpretation
-// here. This is the only place a recovery run's own action ever rewrites a
-// Segment's scheduled time — everywhere else (lib/agents/detect.ts,
-// lib/monitoring/service.ts) deliberately leaves the segment's original
-// schedule untouched and layers live status on top via Disruption/
-// MonitoringRecord. That's safe here specifically because it's gated behind
-// an explicit human confirmation, the same trust boundary the manual
-// segment-edit route (app/api/segments/[id]/route.ts) already relies on —
-// not an agent silently rewriting the record.
+// here. The actual mutation lives in lib/agents/confirmReschedule.ts, shared
+// with the voice assistant's respond_to_reschedule tool — this route is
+// just the HTTP auth/ownership wrapper around it.
 const ConfirmSchema = z.object({ accept: z.boolean() })
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,77 +31,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
   }
-  const { accept } = parsed.data
 
-  const pendingRequests = await prisma.rescheduleRequest.findMany({
-    where: { agentRunId: id, status: 'REQUESTED' },
-    include: { segment: true },
-  })
-
-  if (!accept) {
-    await prisma.agentAction.create({
-      data: {
-        agentRunId: id,
-        segmentId: null,
-        type: 'VERIFY',
-        riskLevel: 'LOW',
-        status: 'EXECUTED',
-        description: "You said the provider's reply didn't actually mean the reschedule was accepted — keeping this open.",
-      },
-    })
-    const updated = await prisma.agentRun.update({
-      where: { id },
-      data: { status: 'ACTION_REQUIRED', summary: "Reply looked like a yes, but you said it wasn't — take another look." },
-    })
-    return NextResponse.json({ agentRun: updated })
+  const result = await confirmReschedule(id, parsed.data.accept)
+  if (result.status === 'not_found') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+  if (result.status === 'not_pending') {
+    return NextResponse.json({ error: 'This run has no pending reschedule to confirm.' }, { status: 409 })
   }
 
-  for (const request of pendingRequests) {
-    const segment = request.segment
-
-    // A reply doesn't always accept the primary requested time — it might
-    // accept the fallback alternative instead (see
-    // lib/agents/inboundReply.ts, which marks whichever Alternative the
-    // reply actually matched as `selected`). Apply that one when it exists;
-    // only fall back to the plain requested time when no reply-driven
-    // selection was ever recorded (e.g. this run was confirmed without
-    // going through reply interpretation at all).
-    const selectedAlternative = await prisma.alternative.findFirst({
-      where: { agentRunId: id, segmentId: segment.id, selected: true },
-    })
-    const targetTime = selectedAlternative?.proposedTime ?? request.requestedTime
-    const delta = segment.departureTime ? targetTime.getTime() - segment.departureTime.getTime() : null
-
-    await prisma.segment.update({
-      where: { id: segment.id },
-      data: {
-        departureTime: targetTime,
-        arrivalTime: segment.arrivalTime && delta !== null ? new Date(segment.arrivalTime.getTime() + delta) : segment.arrivalTime,
-        status: 'DELAYED',
-      },
-    })
-
-    await prisma.rescheduleRequest.update({
-      where: { id: request.id },
-      data: { status: 'CONFIRMED', respondedAt: new Date() },
-    })
-
-    await prisma.agentAction.create({
-      data: {
-        agentRunId: id,
-        segmentId: segment.id,
-        type: 'UPDATE_ITINERARY',
-        riskLevel: 'LOW',
-        status: 'EXECUTED',
-        description: `Updated ${segmentLabel(segment)}'s scheduled time to reflect the confirmed reschedule.`,
-      },
-    })
-  }
-
-  const updated = await prisma.agentRun.update({
-    where: { id },
-    data: { status: 'CONFIRMED', summary: "Rescheduled and confirmed — your itinerary is up to date.", completedAt: new Date() },
-  })
-
-  return NextResponse.json({ agentRun: updated })
+  return NextResponse.json({ agentRun: result.agentRun })
 }

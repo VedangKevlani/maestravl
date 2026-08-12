@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import type { VoiceTurnMessage } from '@/lib/voice/types'
+import type { VoiceTurnMessage, PendingVoiceAction } from '@/lib/voice/types'
 
 // SpeechRecognition isn't in TypeScript's bundled DOM types (only its
 // supporting types — SpeechRecognitionResultList etc. — are), and the
@@ -47,6 +47,12 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const historyRef = useRef<VoiceTurnMessage[]>([])
+  // A mutating tool call (report a delay / check live status / respond to
+  // a reschedule) the assistant proposed but hasn't confirmed yet — opaque
+  // to this widget, just held and echoed back on the next turn so the
+  // server can replay it into the model's context instead of relying on
+  // its memory of what it said (see lib/voice/agent.ts).
+  const pendingActionRef = useRef<PendingVoiceAction | null>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const capturedTranscriptRef = useRef<string>('')
   // onend's closure captures `state` as of when startListening() ran (always
@@ -72,7 +78,7 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
       const res = await fetch(`/api/trips/${tripId}/voice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: transcriptText, history: historyRef.current }),
+        body: JSON.stringify({ transcript: transcriptText, history: historyRef.current, pendingAction: pendingActionRef.current }),
       })
       const data = await res.json().catch(() => ({}))
 
@@ -83,6 +89,7 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
       }
 
       setReply(data.reply)
+      pendingActionRef.current = data.pendingAction ?? null
       const userTurn: VoiceTurnMessage = { role: 'user', content: transcriptText }
       const assistantTurn: VoiceTurnMessage = { role: 'assistant', content: data.reply }
       historyRef.current = [...historyRef.current, userTurn, assistantTurn].slice(-MAX_HISTORY)

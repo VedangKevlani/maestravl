@@ -40,6 +40,8 @@ export async function loadVoiceContext(tripId: string): Promise<VoiceContext> {
       include: {
         disruption: { include: { segment: true } },
         actions: { orderBy: { createdAt: 'asc' } },
+        rescheduleRequests: { where: { status: 'REQUESTED' }, include: { segment: true } },
+        alternatives: { where: { selected: true } },
       },
     }),
   ])
@@ -63,6 +65,7 @@ export async function loadVoiceContext(tripId: string): Promise<VoiceContext> {
       arrivalTime: s.arrivalTime,
       confirmationNumber: s.confirmationNumber,
       notes: s.notes,
+      timezone: s.timezone,
       monitoringStatus: status,
       monitoringCheckedAt: checkedAt,
     }
@@ -83,6 +86,21 @@ export async function loadVoiceContext(tripId: string): Promise<VoiceContext> {
       newStatus: run.disruption.newStatus,
       delayMinutes: run.disruption.delayMinutes,
       actions: run.actions.map((a) => ({ type: a.type, description: a.description, status: a.status, createdAt: a.createdAt })),
+      // Same selected-Alternative-first rule as lib/agents/confirmReschedule.ts
+      // — a reply doesn't always accept the primary requested time.
+      pendingReschedule:
+        run.status === 'RESCHEDULING'
+          ? run.rescheduleRequests.map((request) => {
+              const selected = run.alternatives.find((a) => a.segmentId === request.segmentId)
+              return {
+                segmentId: request.segmentId,
+                segmentLabel: segmentLabel(request.segment),
+                requestedTime: selected?.proposedTime ?? request.requestedTime,
+                feeAmount: request.feeAmount,
+                currency: request.currency,
+              }
+            })
+          : undefined,
     })),
   }
 }

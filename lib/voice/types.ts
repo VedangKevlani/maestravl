@@ -17,6 +17,7 @@ export interface VoiceSegment {
   arrivalTime: Date | null
   confirmationNumber: string | null
   notes: string | null
+  timezone: string | null
   monitoringStatus: string | null // formatMonitoringStatus() output, or null if never checked
   monitoringCheckedAt: Date | null
 }
@@ -26,6 +27,15 @@ export interface VoiceRecoveryAction {
   description: string
   status: string
   createdAt: Date
+}
+
+/** The specific time actually being asked about for a pending reschedule confirmation — see lib/agents/confirmReschedule.ts's same selected-Alternative-first rule. */
+export interface VoicePendingReschedule {
+  segmentId: string
+  segmentLabel: string
+  requestedTime: Date
+  feeAmount: number | null
+  currency: string | null
 }
 
 export interface VoiceRecoveryRun {
@@ -38,6 +48,8 @@ export interface VoiceRecoveryRun {
   newStatus: string
   delayMinutes: number | null
   actions: VoiceRecoveryAction[]
+  /** Only present when status is RESCHEDULING — one entry per segment still awaiting the passenger's confirm/reject. */
+  pendingReschedule?: VoicePendingReschedule[]
 }
 
 export interface VoiceContext {
@@ -51,4 +63,18 @@ export interface VoiceContext {
 export interface VoiceTurnMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+/**
+ * Frozen record of a mutating tool call the passenger has been told about
+ * but not yet confirmed — round-tripped opaquely by the client between
+ * turns (see lib/voice/pendingAction.ts and app/components/VoiceWidget.tsx).
+ * toolResult is the literal propose-mode response the model already saw,
+ * replayed verbatim into the next turn's conversation history so the model
+ * never has to re-derive what it proposed from memory.
+ */
+export interface PendingVoiceAction {
+  toolName: string
+  toolArgs: Record<string, unknown>
+  toolResult: Record<string, unknown>
 }

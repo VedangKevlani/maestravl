@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
 import { handleDisruptionDetection } from '@/lib/agents/detect'
 import { getFieldProfile } from '@/app/components/segmentFieldProfiles'
+import { computeManualDelayMinutes } from '@/lib/agents/computeManualDelay'
 
 // Lets a trip owner manually report a disruption on one of their own
 // segments — the entry point for transport modes that don't have live
@@ -52,20 +53,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!newDepartureTime) {
       return NextResponse.json({ error: `Enter the new ${timeLabelLower}.` }, { status: 400 })
     }
-    if (!segment.departureTime) {
-      return NextResponse.json(
-        { error: `This segment doesn't have a scheduled ${timeLabelLower} on file — set one first (Edit), then report the delay.` },
-        { status: 400 }
-      )
+    const result = computeManualDelayMinutes(segment.departureTime, newDepartureTime, timeLabelLower)
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    delayMinutes = Math.round((new Date(newDepartureTime).getTime() - segment.departureTime.getTime()) / 60_000)
-    if (delayMinutes <= 0) {
-      return NextResponse.json({ error: `The new ${timeLabelLower} must be after the originally scheduled time.` }, { status: 400 })
-    }
-    if (delayMinutes > 2880) {
-      // Cap at 48h — anything longer isn't really a "delay" anymore.
-      return NextResponse.json({ error: "That's more than 48 hours later — report this as cancelled instead." }, { status: 400 })
-    }
+    delayMinutes = result.delayMinutes
   }
 
   const disruption = await handleDisruptionDetection(segment, segment.status, {
