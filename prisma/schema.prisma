@@ -33,6 +33,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // IANA zone, e.g. "America/New_York" — powers the world-clock feature's
+  // "current time at home" column and the arrival-time-in-your-terms
+  // comparison. Nullable: auto-suggested from the browser on first trip
+  // view (see app/components/HomeTimezoneBadge.tsx), never guessed server-side.
+  homeTimezone String?
+
   trips       Trip[]
   resetTokens PasswordResetToken[]
 }
@@ -57,12 +63,13 @@ model Trip {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  passengers       Passenger[]
-  segments         Segment[]
-  documents        Document[]
-  notificationLogs NotificationLog[]
-  disruptions      Disruption[]
-  agentRuns        AgentRun[]
+  passengers          Passenger[]
+  segments            Segment[]
+  documents           Document[]
+  notificationLogs    NotificationLog[]
+  disruptions         Disruption[]
+  agentRuns           AgentRun[]
+  voicePendingActions VoicePendingAction[]
 }
 
 model Passenger {
@@ -278,7 +285,7 @@ model AgentRun {
   disruption   Disruption @relation(fields: [disruptionId], references: [id], onDelete: Cascade)
 
   /// DETECTED | ANALYZING | CONTACTING | WAITING_FOR_RESPONSE | RESCHEDULING |
-  /// CONFIRMED | FAILED | ALTERNATIVE_FOUND | ACTION_REQUIRED | COMPLETED
+  /// CONFIRMED | FAILED | ALTERNATIVE_FOUND | ACTION_REQUIRED | COMPLETED | SUPERSEDED
   status      String    @default("DETECTED")
   summary     String? // short passenger-facing rollup, e.g. "Everything is handled."
   createdAt   DateTime  @default(now())
@@ -413,4 +420,37 @@ model Alternative {
   selected         Boolean   @default(false)
 
   createdAt DateTime @default(now())
+}
+
+// Short-lived, single-use record of a voice-assistant mutating action the
+// passenger has been told about but not yet confirmed — see
+// lib/voice/pendingAction.ts. Exists specifically so a "propose, then
+// confirm" voice exchange (report a delay / check live status / respond to
+// a reschedule) survives the round-trip between two separate turns with its
+// *exact* original parameters intact, rather than asking the model to
+// re-derive them from memory of what it said (a real correctness risk: two
+// independent date/timezone derivations aren't guaranteed to agree). The
+// client only ever holds and echoes back this row's opaque id — never
+// inspects or reconstructs its contents.
+model VoicePendingAction {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId String
+
+  /// 'report_delay' | 'check_live_status' | 'respond_to_reschedule'
+  tool String
+  /// JSON-encoded frozen args — segmentId+status+newDepartureTime, segmentId, or agentRunId
+  args String
+
+  // Which runVoiceTurn call created this — a confirm attempt presented
+  // within the *same* call (the tool-calling loop can iterate multiple
+  // times per HTTP request) is rejected, since that would mean the model
+  // confirmed its own proposal without the passenger's next reply ever
+  // happening.
+  requestNonce String
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
 }
