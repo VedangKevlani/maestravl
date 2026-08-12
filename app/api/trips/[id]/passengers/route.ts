@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
 import { sendPassengerAddedEmail } from '@/lib/email'
 import { segmentLabel } from '@/lib/monitoring/service'
+import { resolveSegmentZones } from '@/lib/dateFormat'
 
 const CreatePassengerSchema = z.object({
   name: z.string().trim().min(1).max(150),
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const segments = await prisma.segment.findMany({
       where: { tripId },
       orderBy: { order: 'asc' },
-      select: { identifier: true, provider: true, departureLocationCode: true, arrivalLocationCode: true, departureTime: true },
+      select: { identifier: true, provider: true, departureLocationCode: true, arrivalLocationCode: true, departureTime: true, timezone: true },
     })
 
     // Best-effort — a failed confirmation email shouldn't fail passenger creation.
@@ -50,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await sendPassengerAddedEmail(passenger.email, {
         recipientName: passenger.name,
         tripTitle: trip.title,
-        segments: segments.map((s) => ({ label: segmentLabel(s), departureTime: s.departureTime })),
+        segments: segments.map((s) => ({ label: segmentLabel(s), departureTime: s.departureTime, timezone: resolveSegmentZones(s).departure })),
       })
     } catch (err) {
       console.error('Failed to send passenger-added email', err)

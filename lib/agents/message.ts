@@ -8,34 +8,17 @@
 // (not yet automated — see docs/ARCHITECTURE.md).
 
 import type { MonitoringCheckStatus } from '@/lib/monitoring/types'
+import { formatFriendlyTime, formatDuration } from '@/lib/dateFormat'
 
-// Renders a time in the *segment's own* timezone (e.g. "America/Los_Angeles"
-// for a flight out of Oakland), never the server's incidental local zone —
-// Intl.DateTimeFormat silently falls back to the runtime's own timezone if
-// `timeZone` is omitted, which has nothing to do with where the flight or
-// hotel actually is and would render a confidently wrong-looking label
-// (e.g. "EST" on a Pacific-coast flight) rather than an honestly generic one.
-// Falls back to UTC — labeled as such — when the segment has no timezone on
-// file, which is the honest "we don't actually know" answer.
-export function formatTime(date: Date, timezone: string | null): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-    timeZone: timezone || 'UTC',
-  }).format(date)
-}
-
-/** e.g. 101 -> "1 hour 41 minutes" — used anywhere a delay is shown to a person, so nobody has to do the math on a raw minute count themselves. */
-export function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60)
-  const mins = minutes % 60
-  if (hours === 0) return `${mins} minutes`
-  if (mins === 0) return `${hours} hour${hours === 1 ? '' : 's'}`
-  return `${hours} hour${hours === 1 ? '' : 's'} ${mins} minutes`
-}
+// Renders a time in the *segment's own* timezone, plain-language zone name
+// (e.g. "New York time", not "EST") — never the server's incidental local
+// zone. Re-exported here (formatTime/formatDuration) so every existing
+// caller of this file (orchestrator.ts, email.ts) keeps working; the actual
+// implementation lives in lib/dateFormat.ts, shared with every other
+// display site in the app (UI, dashboard, activity log) so they never
+// drift into showing different times for the same instant.
+export const formatTime = formatFriendlyTime
+export { formatDuration }
 
 /** Plain-language reason for the outreach, built from the triggering disruption — used as the opening line of every message below. */
 export function describeDisruptionReason(
@@ -63,7 +46,7 @@ export function composeRescheduleRequest(input: {
   confirmationNumber: string | null
   originalTime: Date | null
   proposedTime: Date
-  /** IANA zone (e.g. "America/Los_Angeles") for the segment being rescheduled — this is the provider's own location, which is what matters to them, not wherever Maestravl's server happens to run. Null renders times in UTC, labeled honestly rather than guessing. */
+  /** IANA zone (e.g. "America/Los_Angeles") for the segment being rescheduled — this is the provider's own location, which is what matters to them, not wherever Maestravl's server happens to run. Null renders as "local time," labeled honestly rather than guessing a specific zone. */
   timezone: string | null
   reasonText: string
   /** A later fallback time (see lib/dependency/graph.ts's rankAlternatives) offered as a second option — gives the provider something to say yes to if the primary ask doesn't work, rather than a flat no. Omitted entirely when there's no meaningful alternative to offer. */

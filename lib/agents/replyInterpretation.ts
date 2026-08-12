@@ -17,6 +17,7 @@
 // make anything worse than it already was.
 import { GoogleGenAI } from '@google/genai'
 import type { AgentRunStatus } from '@/lib/constants'
+import { formatFriendlyTime } from '@/lib/dateFormat'
 
 const MODEL = 'gemini-3.6-flash'
 const REQUEST_TIMEOUT_MS = 15000
@@ -80,8 +81,8 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
 
   try {
     const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-    const requested = input.requestedTime ? formatForPrompt(input.requestedTime, input.timezone) : null
-    const alternative = input.alternativeTime ? formatForPrompt(input.alternativeTime, input.timezone) : null
+    const requested = input.requestedTime ? formatFriendlyTime(input.requestedTime, input.timezone) : null
+    const alternative = input.alternativeTime ? formatFriendlyTime(input.alternativeTime, input.timezone) : null
 
     const prompt = [
       `A passenger's trip-recovery assistant asked a travel provider (for "${input.segmentLabel}") to move a booking to a new time.`,
@@ -133,13 +134,6 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
   } catch {
     return FALLBACK
   }
-}
-
-function formatForPrompt(date: Date, timezone: string | null): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
-    timeZone: timezone || 'UTC',
-  }).format(date)
 }
 
 /**

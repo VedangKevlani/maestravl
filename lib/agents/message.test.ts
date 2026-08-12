@@ -65,7 +65,7 @@ describe('composeRescheduleRequest', () => {
       reasonText: 'x',
     })
     expect(ny.body).toContain('1:00')
-    expect(ny.body).toMatch(/EST|GMT-5/)
+    expect(ny.body).toContain('New York time')
 
     const la = composeRescheduleRequest({
       segmentLabel: 'Hotel check-in',
@@ -78,7 +78,7 @@ describe('composeRescheduleRequest', () => {
     expect(la.body).toContain('10:00')
   })
 
-  it('falls back to UTC, explicitly labeled, when the segment has no timezone on file', () => {
+  it('falls back to plain "local time", not a technical zone abbreviation, when the segment has no timezone on file', () => {
     const { body } = composeRescheduleRequest({
       segmentLabel: 'Hotel check-in',
       confirmationNumber: null,
@@ -87,7 +87,8 @@ describe('composeRescheduleRequest', () => {
       timezone: null,
       reasonText: 'x',
     })
-    expect(body).toContain('UTC')
+    expect(body).toContain('local time')
+    expect(body).not.toMatch(/\bUTC\b|\bGMT\b/)
   })
 
   it('mentions a backup time when given one, and asks about "either" rather than a single change', () => {

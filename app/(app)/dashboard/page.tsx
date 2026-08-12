@@ -2,10 +2,11 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import TripCardMenu from '../../components/TripCardMenu'
+import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
 
-function formatDate(d: Date | null) {
+function formatDate(d: Date | null, timezone: string | null) {
   if (!d) return null
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(d)
+  return formatFriendlyTime(d, timezone)
 }
 
 type TripWithRelations = Awaited<ReturnType<typeof getTrips>>[number]
@@ -52,7 +53,7 @@ function TripCard({ trip, muted }: { trip: TripWithRelations; muted?: boolean })
       </p>
       {nextSegment?.departureTime && (
         <p className="text-editorial text-white/40" style={{ fontSize: '0.8rem' }}>
-          {muted ? 'Last' : 'Next'}: {nextSegment.identifier || nextSegment.transportType} · {formatDate(nextSegment.departureTime)}
+          {muted ? 'Last' : 'Next'}: {nextSegment.identifier || nextSegment.transportType} · {formatDate(nextSegment.departureTime, resolveSegmentZones(nextSegment).departure)}
         </p>
       )}
       {!muted && (

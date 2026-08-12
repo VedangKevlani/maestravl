@@ -10,6 +10,8 @@ import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { toLocalInputValue } from './dateInput'
 import { isUberConfigured, locationText, buildUberDeepLink, isPlausibleUberTrip } from '@/lib/uber'
 import { getFieldProfile } from './segmentFieldProfiles'
+import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
+import SegmentWorldClock from './SegmentWorldClock'
 
 const fieldClassSmall = 'glass-card px-2.5 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 
@@ -33,9 +35,14 @@ function parseCheckStatus(lastKnownData: string | null): string | null {
   }
 }
 
-function formatDateTime(iso: string | null) {
+// Timezone-aware — renders in the segment's own departure/arrival zone
+// (see lib/dateFormat.ts's resolveSegmentZones), not the viewer's browser
+// zone. `timezone: null` (e.g. system-event timestamps like "last checked")
+// intentionally falls back to plain-language "local time" rather than
+// guessing a specific zone.
+function formatDateTime(iso: string | null, timezone: string | null = null) {
   if (!iso) return null
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
+  return formatFriendlyTime(new Date(iso), timezone)
 }
 
 const MONITORING_LABEL: Record<string, string> = {
@@ -64,7 +71,7 @@ interface ReportResult {
   agentRun?: { status: string } | null
 }
 
-export default function SegmentCard({ segment, passengers, nextSegment }: { segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null }) {
+export default function SegmentCard({ segment, passengers, nextSegment, homeTimezone }: { segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null; homeTimezone: string | null }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -84,6 +91,7 @@ export default function SegmentCard({ segment, passengers, nextSegment }: { segm
   const fieldsNeedingReview = Object.entries(confidenceScores).filter(([, v]) => v < 70)
   const checkStatus = parseCheckStatus(segment.monitoring?.lastKnownData ?? null)
   const linkedPassengers = passengers.filter((p) => segment.passengerIds.includes(p.id))
+  const segmentZones = resolveSegmentZones(segment)
 
   // "Departure time" only makes sense for route-based segments — a hotel's
   // equivalent scheduled moment is check-in, a restaurant's is its
@@ -199,11 +207,13 @@ export default function SegmentCard({ segment, passengers, nextSegment }: { segm
         )}
 
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-editorial text-white/40" style={{ fontSize: '0.78rem' }}>
-          {segment.departureTime && <span>Departs {formatDateTime(segment.departureTime)}</span>}
-          {segment.arrivalTime && <span>Arrives {formatDateTime(segment.arrivalTime)}</span>}
+          {segment.departureTime && <span>Departs {formatDateTime(segment.departureTime, segmentZones.departure)}</span>}
+          {segment.arrivalTime && <span>Arrives {formatDateTime(segment.arrivalTime, segmentZones.arrival)}</span>}
           {segment.seat && <span>Seat {segment.seat}</span>}
           {segment.confirmationNumber && <span>Conf. {segment.confirmationNumber}</span>}
         </div>
+
+        <SegmentWorldClock segment={segment} homeTimezone={homeTimezone} />
 
         {fieldsNeedingReview.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mt-3">

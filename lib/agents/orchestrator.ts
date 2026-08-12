@@ -318,7 +318,7 @@ async function sendContactRequest(
       await logAction(agentRunId, {
         type: 'REQUEST_RESCHEDULE',
         segmentId: segment.id,
-        description: `Requested moving ${label} to ${impact.shiftedStart.toLocaleString()}.`,
+        description: `Requested moving ${label} to ${formatTime(impact.shiftedStart, segment.timezone)}.`,
         status: 'EXECUTED',
       })
     }

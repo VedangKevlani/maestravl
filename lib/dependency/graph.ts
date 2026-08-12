@@ -27,6 +27,7 @@
 
 import type { TransportType } from '@/lib/constants'
 import type { SegmentImpactLevel } from '@/lib/constants'
+import { formatDuration } from '@/lib/dateFormat'
 
 // How much slack (in minutes) between a segment's scheduled start and the
 // disruption-shifted actual end of whatever precedes it still counts as
@@ -124,13 +125,13 @@ export function calculateImpact(
     let reason: string
     if (bufferMinutes < 0) {
       level = 'DIRECT'
-      reason = `The shifted schedule overruns this segment's start by ${-bufferMinutes}m.`
+      reason = `The shifted schedule overruns this segment's start by ${formatDuration(-bufferMinutes)}.`
     } else if (bufferMinutes <= WARNING_BUFFER_MINUTES) {
       level = 'POTENTIAL'
-      reason = `Only ${bufferMinutes}m of buffer remains before this segment — tight, but not an outright conflict.`
+      reason = `Only ${formatDuration(bufferMinutes)} of buffer remains before this segment — tight, but not an outright conflict.`
     } else {
       level = 'UNAFFECTED'
-      reason = `${bufferMinutes}m of buffer comfortably absorbs the shift.`
+      reason = `${formatDuration(bufferMinutes)} of buffer comfortably absorbs the shift.`
     }
 
     results.push({

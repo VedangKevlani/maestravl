@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { formatMonitoringStatus } from './monitoring/format'
 import { formatDuration, formatTime } from './agents/message'
+import { formatFriendlyTime } from './dateFormat'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -35,18 +36,17 @@ export async function sendPassengerAddedEmail(
   opts: {
     recipientName: string
     tripTitle: string
-    segments: { label: string; departureTime: Date | null }[]
+    segments: { label: string; departureTime: Date | null; timezone: string | null }[]
   }
 ) {
   const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
   const subject = `You're on ${opts.tripTitle}`
 
-  const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   const itineraryHtml = opts.segments.length
     ? `
       <ul>
         ${opts.segments
-          .map((s) => `<li>${s.label}${s.departureTime ? ` — ${dateFormatter.format(s.departureTime)}` : ''}</li>`)
+          .map((s) => `<li>${s.label}${s.departureTime ? ` — ${formatFriendlyTime(s.departureTime, s.timezone)}` : ''}</li>`)
           .join('')}
       </ul>
     `

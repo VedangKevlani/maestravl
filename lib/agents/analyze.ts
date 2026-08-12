@@ -9,6 +9,7 @@
 import { calculateImpact, calculateCancellationImpact, type DependencySegment, type SegmentImpact } from '@/lib/dependency/graph'
 import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { segmentLabel } from '@/lib/segmentLabel'
+import { formatDuration } from '@/lib/dateFormat'
 import type { MonitoringCheckStatus } from '@/lib/monitoring/types'
 import type { AgentActionType } from '@/lib/constants'
 
@@ -52,7 +53,7 @@ export function planAnalysis(
       type: 'ANALYZE_IMPACT',
       segmentId: disruptedSegment.id,
       description: `${segmentLabel(disruptedSegment)} is now ${formatMonitoringStatus(newStatus)}${
-        delayMinutes ? ` (delayed ${delayMinutes}m)` : ''
+        delayMinutes ? ` (delayed ${formatDuration(delayMinutes)})` : ''
       }.`,
     },
   ]
