@@ -19,6 +19,14 @@
   --amber: #d4a853;
 }
 
+@keyframes fadeInText {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in-text {
+  animation: fadeInText 0.25s ease-out;
+}
+
 @layer base {
   * {
     box-sizing: border-box;

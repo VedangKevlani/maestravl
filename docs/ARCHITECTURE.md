@@ -305,11 +305,50 @@ proposes a reschedule *with a fee* until a provider's reply is processed.
   "> "-quoted blocks, not every client's convention), and records it as an
   inbound `Communication`.
 
-  Deliberately moves the run to `ACTION_REQUIRED`, **not** `CONFIRMED` —
-  Maestravl knows a reply arrived, not what it says (no LLM interprets the
-  content), so the passenger reads the actual quoted reply themselves
-  rather than Maestravl guessing at the outcome. Same honesty boundary as
-  everywhere else in this file.
+  Never moves straight to `CONFIRMED` — see "Reply interpretation" below
+  for what it does move to and why that's still not the same as claiming
+  resolution.
+
+**Reply interpretation (`lib/agents/replyInterpretation.ts`):** the one
+deliberate exception to this codebase's "deterministic logic first, no LLM
+in the loop" rule (see the "Why no paid AI API" section above and the
+header comments on `analyze.ts`/`classify.ts`/`message.ts`) — reading what
+a reply actually *means* is genuine language understanding, not something
+a regex can do, and it reuses the same free-tier Gemini already wired for
+the voice assistant rather than adding a new dependency.
+
+Split pure/impure the same way `replyText.ts`/`inboundReply.ts` already
+are: `classifyReply` is the only network call (Gemini, structured JSON
+output constrained to `ACCEPTED | DECLINED | COUNTER_OFFER | UNCLEAR` plus
+a confidence score) and never throws — any failure (no `GEMINI_API_KEY`,
+timeout, malformed output) degrades to `UNCLEAR`, exactly the pipeline's
+behavior before this feature existed, so a broken classifier can never
+make anything worse than not having one. `decideRunTransition` is pure and
+unit-tested (`replyInterpretation.test.ts`) — it's what actually decides
+the `AgentRun`'s next status, keeping that decision as deterministic and
+auditable as the rest of the pipeline; only the reading-comprehension step
+is AI.
+
+Even a confident `ACCEPTED` read only reaches `RESCHEDULING`, never
+`CONFIRMED` directly — spec section 20, never claim a resolution that
+wasn't verified. `RESCHEDULING` surfaces a prompt in
+`TripRecoveryStatus.tsx` with the interpreted summary, a link to the real
+reply text (via the new `GET /api/agent-runs/[id]/communications`), and
+two buttons: "Confirm — update itinerary" or "Not quite — keep working on
+it". Only an explicit passenger confirm
+(`app/api/agent-runs/[id]/confirm-reschedule`) moves the run to
+`CONFIRMED` and actually rewrites the segment's `departureTime`/
+`arrivalTime` (shifted by the same delta, so trip duration stays
+consistent) — the first and only place a recovery run's own action ever
+mutates a segment's scheduled time (`detect.ts`/`monitoring/service.ts`
+deliberately never do, layering live status on top instead). That's safe
+specifically because it's gated behind the same human-confirmation trust
+boundary as the manual segment-edit route, not an agent silently rewriting
+the record. This is also `AgentActionType.UPDATE_ITINERARY`'s first real
+use anywhere in the codebase — logged once the itinerary is actually
+updated. Declining the prompt reverts the run to `ACTION_REQUIRED` with a
+note recording the correction — the human always has the final say over a
+misread reply.
 
 **Alternatives (spec section 8, `rankAlternatives` in
 `lib/dependency/graph.ts`):** for a DIRECT impact, Maestravl now proposes
@@ -325,35 +364,52 @@ this codebase can ask a provider what times they actually have.
 second option ("Could you confirm whether either of these times would
 work?") rather than sending two separate asks.
 
-**Not yet built:** using a reply's content to actually update the
-itinerary (`AgentRun.status` has a `RESCHEDULING` value reserved for this —
-nothing produces it yet, since that requires *interpreting* a reply, not
-just detecting one), and picking between Option A/B based on which one the
-provider actually said yes to (currently nothing reads the reply well
-enough to know).
+**Not yet built:** picking between Option A/B based on which one the
+provider actually said yes to — `classifyReply` reads intent (accepted/
+declined/counter-offer), not which specific proposed time was accepted, so
+`confirm-reschedule` always applies the primary `RescheduleRequest.requestedTime`
+regardless of whether the reply meant Option A or Option B.
 
 ## Passenger-facing recovery status
 
 `TripRecoveryStatus.tsx` (embedded at the top of the trip page) replaced
 an earlier version that dumped every `AgentAction` at once — per direct
 feedback, that read as a technical log in the middle of an already
-stressful situation. Current design:
+stressful situation. A later revision found the replacement itself still
+led with a *generic* status phrase (from `STATUS_COPY`) rather than the
+real latest thing that happened, with no way to verify any claim against
+the actual message sent or received. Current design:
 
-- A single calm headline derived from `AgentRun.status` via a status→copy
-  table (`STATUS_COPY`) — never a raw enum value.
-- The single latest action underneath, as a live-feeling ticker (the panel
-  polls `GET /api/trips/[id]/activity` every ~12s — no websocket/SSE
+- The banner's primary text is the latest concrete `AgentAction.description`
+  — one real thing at a time, replacing itself in place as the run
+  advances — not a canned phrase. The `STATUS_COPY` headline is demoted to
+  a small phase tag (e.g. "Contacting the provider") shown only when it
+  says something the primary text doesn't, and is the fallback text for a
+  fresh run with no actions yet or a terminal one. The panel polls
+  `GET /api/trips/[id]/activity` every ~12s (no websocket/SSE
   infrastructure in this stack, and polling a handful of trips this
-  infrequently is cheap).
-- Full history is opt-in behind "View all activity," not shown by default.
-  Once opened, only the *most recent* disruption's timeline is expanded —
-  earlier disruptions collapse into single summary rows (segment, status,
-  update count, relative time) that only expand their own history when
-  individually clicked, so a trip with several past disruptions doesn't
-  dump everything at once.
+  infrequently is cheap); the banner text is keyed on the latest action's
+  id so a genuine change remounts with a brief fade rather than a jarring
+  reflow.
+- "View messages" (headline row, and per-run inside "View all activity")
+  lazily fetches `GET /api/agent-runs/[id]/communications` — the actual
+  `Communication` rows for that run: the real email Maestravl sent, the
+  real reply it got back, rendered as plain text (never `dangerouslySetInnerHTML`
+  — reply content is untrusted, provider-supplied text). This is the
+  direct answer to "nothing to validate them": every `AgentAction`
+  description is a paraphrase, this is the source it's paraphrasing.
+- Full action history is opt-in behind "View all activity," not shown by
+  default. Once opened, only the *most recent* disruption's timeline is
+  expanded — earlier disruptions collapse into single summary rows
+  (segment, status, update count, relative time) that only expand their
+  own history when individually clicked, so a trip with several past
+  disruptions doesn't dump everything at once.
 - "Heard back?" appears whenever a run is genuinely waiting on someone
   (`WAITING_FOR_RESPONSE`/`ACTION_REQUIRED`) — the manual-resolve escape
   hatch described above.
+- When a run reaches `RESCHEDULING` (see "Reply interpretation" above), the
+  banner is replaced by a distinct confirm/decline prompt instead of the
+  normal ticker — see that section for the full flow.
 
 ## Trip archiving
 
@@ -374,6 +430,56 @@ window this used to have. That window mattered in practice: a real segment
 whose provider (e.g. AeroDataBox) simply has no data for it — a genuine
 `noMatch`, not a bug — would otherwise poll every 30 minutes for a full
 day past its original departure before giving up.
+
+## Voice assistant
+
+`lib/voice/*` + `app/components/VoiceWidget.tsx` + `app/api/trips/[id]/voice`
+— a push-to-talk widget (mic button, fixed bottom-right, mounted only on
+the trip detail page) that answers spoken questions about a trip using
+real data, not a separate faked-up view of it.
+
+- **Gemini-backed** (`GEMINI_API_KEY`, same free-tier rationale as "Why no
+  paid AI API" above — genuinely ongoing and non-expiring, not a trial
+  credit), with exactly three read-only tools (`lib/voice/tools.ts`):
+  `get_itinerary`, `get_segment_status`, `get_recovery_activity`. There is
+  no mutation tool — the assistant cannot change a booking, send a
+  message, or approve an action; it can only describe what
+  `lib/voice/tripContext.ts` already loaded from the database for that
+  turn (itinerary, monitoring status, the 10 most recent `AgentRun`s and
+  their actions — not raw `Communication` content).
+- `lib/voice/resolveSegment.ts` matches a spoken reference ("my next
+  flight," "the train to Kingston") against the trip's segments and
+  returns `found | ambiguous | not_found` explicitly — it never guesses
+  silently when a reference could mean more than one segment.
+- `lib/voice/systemPrompt.ts` hard-rules that tools are the only source of
+  truth (never answer from memory) and that a completed action is never
+  claimed unless a tool actually reported it — same honesty boundary as
+  the rest of this file.
+- TTS (`lib/voice/tts.ts`) is ElevenLabs if both `ELEVENLABS_API_KEY` and
+  `ELEVENLABS_VOICE_ID` are set; on any failure or if unset, the widget
+  falls back to the browser's own `SpeechSynthesis` — a real browser API,
+  not another paid account, so there's no billing path anywhere in this
+  feature beyond the already-free Gemini call. Speech-to-text is
+  client-side only (`SpeechRecognition`); the widget renders nothing if
+  the browser doesn't support it.
+
+## System health
+
+`/system-health` (`app/api/system/health/route.ts` +
+`app/(app)/system-health/page.tsx`, linked from the header nav) is a
+standing, evidence-based answer to "does this integration actually work,"
+replacing what used to be a one-time manual verification with no lasting
+record. For each integration it reports two independent things: whether
+the required env var(s) are set ("configured"), and whether real evidence
+exists in the database that it has actually done something at least once
+("confirmed") — e.g. inbound reply detection only shows confirmed once an
+`INBOUND` `Communication` row exists, not just because
+`RESEND_WEBHOOK_SECRET` is set. It never returns secret values, only
+booleans/counts/timestamps, and is gated the same as every other
+authenticated route (there's no separate admin role in this app). Train/
+bus/ferry/taxi monitoring is always reported as "not implemented," never
+as merely unconfigured, since the adapters are stubs regardless of any env
+var (see "Monitoring abstraction" above and `docs/INTEGRATION.md`).
 
 ## Known limitations (by design, for this iteration)
 

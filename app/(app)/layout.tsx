@@ -20,6 +20,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/notifications" className="text-label text-white/40 hover:text-white/80 transition-colors">
               Notifications
             </Link>
+            <Link href="/system-health" className="text-label text-white/40 hover:text-white/80 transition-colors">
+              System status
+            </Link>
             <span className="text-editorial text-white/40" style={{ fontSize: '0.85rem' }}>{session.user.email}</span>
             <form action={async () => { 'use server'; await signOut({ redirectTo: '/login' }) }}>
               <button type="submit" className="text-label text-white/40 hover:text-white/80 transition-colors">

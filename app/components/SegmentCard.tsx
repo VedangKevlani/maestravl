@@ -197,7 +197,12 @@ export default function SegmentCard({ segment, passengers }: { segment: SegmentD
             {monitoringLabel(segment.monitoring)}
             {segment.monitoring?.lastCheckedAt && ` · last checked ${formatDateTime(segment.monitoring.lastCheckedAt)}`}
           </p>
-          {checkStatus && (
+          {/* Only shown once a real adapter has actually run a check — a
+              stub adapter (train/bus/etc.) always reports UNKNOWN even when
+              "connected," and a pill sitting next to "not yet connected"
+              text would otherwise imply more monitoring is happening than
+              actually is. */}
+          {checkStatus && segment.monitoring?.status === 'ACTIVE' && (
             <span
               className="text-label px-2 py-0.5 rounded-full"
               style={{ background: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).bg, color: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).fg, fontSize: '0.6rem' }}
