@@ -54,6 +54,7 @@ next-env.d.ts
 /storage/
 e2e/output/
 e2e/fixtures/*.png
+e2e/fixtures/*.pdf
 
 # tesseract.js language-model cache (downloaded on first OCR run)
 *.traineddata

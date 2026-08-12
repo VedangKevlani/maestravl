@@ -13,6 +13,14 @@ export interface OcrResult {
 export async function runOcr(imageBuffers: Buffer[]): Promise<OcrResult> {
   const worker = await createWorker('eng')
   try {
+    // Keeps runs of whitespace as Tesseract actually saw them (e.g. the gap
+    // between a label and its value in "Departure    Tue, Dec 15, 2026")
+    // rather than collapsing to single spaces — the rule-based parser
+    // (lib/extraction/parse.ts) matches against that literal document
+    // layout, so preserving it measurably helps field extraction on
+    // table-like itineraries, not just readability.
+    await worker.setParameters({ preserve_interword_spaces: '1' })
+
     const texts: string[] = []
     const confidences: number[] = []
     for (const buf of imageBuffers) {

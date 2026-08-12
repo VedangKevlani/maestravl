@@ -17,7 +17,11 @@ export async function extractText(bytes: Buffer, fileType: DetectedFileType): Pr
     if (nativeText.length >= MIN_USABLE_NATIVE_TEXT_LENGTH) {
       return { text: nativeText, method: 'native-pdf' }
     }
-    // No usable text layer — this is likely a scanned/rasterized PDF. Render pages and OCR them.
+    // No usable text layer — this is likely a scanned/rasterized PDF. Render
+    // pages and OCR them. Safe to reuse `bytes` here — see the comments in
+    // pdfText.ts on why both loaders there copy rather than share a buffer
+    // with pdf.js (a real crash this used to hit for exactly this fallback
+    // path).
     const pageImages = await renderPdfPagesToPng(bytes)
     const { text, confidence } = await runOcr(pageImages)
     return { text, method: 'ocr', ocrConfidence: confidence }

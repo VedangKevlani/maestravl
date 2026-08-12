@@ -7,10 +7,17 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
  */
 export async function extractNativePdfText(bytes: Uint8Array): Promise<string> {
   const loadingTask = getDocument({
-    // pdf.js rejects Node's Buffer (a Uint8Array subclass) with "Please provide
-    // binary data as `Uint8Array`, rather than `Buffer`." — normalize to a plain
-    // Uint8Array view (no copy) so callers can pass a Buffer safely.
-    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    // pdf.js rejects Node's Buffer (a Uint8Array subclass) with "Please
+    // provide binary data as `Uint8Array`, rather than `Buffer`." — must be
+    // a genuine COPY (the 1-arg Uint8Array constructor form), not a
+    // zero-copy view over the same underlying buffer: pdf.js detaches the
+    // ArrayBuffer it's handed once the document load completes, which
+    // would silently neuter the caller's original `bytes` too if it shared
+    // the same backing buffer (extractText.ts reuses `bytes` afterward for
+    // the OCR fallback path — that's exactly the crash this caused:
+    // "Cannot perform Construct on a detached ArrayBuffer", then "The PDF
+    // file is empty" once `bytes` itself had been neutered).
+    data: new Uint8Array(bytes),
     disableFontFace: true,
     useWorkerFetch: false,
     verbosity: 0,
@@ -42,7 +49,10 @@ export async function renderPdfPagesToPng(bytes: Uint8Array): Promise<Buffer[]> 
   })
 
   const loadingTask = getDocument({
-    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    // Same copy requirement as extractNativePdfText above — a zero-copy
+    // view here would risk the same detached-buffer crash if this is ever
+    // called after another pdf.js load shared the same backing buffer.
+    data: new Uint8Array(bytes),
     useWorkerFetch: false,
     verbosity: 0,
   })
@@ -51,7 +61,12 @@ export async function renderPdfPagesToPng(bytes: Uint8Array): Promise<Buffer[]> 
     const buffers: Buffer[] = []
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum)
-      const viewport = page.getViewport({ scale: 2 })
+      // PDF's native unit is 72 DPI; Tesseract's own documentation
+      // recommends ~300 DPI as the accuracy sweet spot for OCR (materially
+      // better character recognition on small body text than the previous
+      // scale: 2 / 144 DPI, at a still-reasonable memory/CPU cost for a
+      // typical 1-3 page itinerary).
+      const viewport = page.getViewport({ scale: 300 / 72 })
       const canvas = createCanvas(viewport.width, viewport.height)
       const context = canvas.getContext('2d')
       await page.render({
