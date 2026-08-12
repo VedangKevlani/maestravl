@@ -8,7 +8,8 @@ import SegmentEditForm from './SegmentEditForm'
 import { TRANSPORT_ICONS, type PassengerDTO, type SegmentDTO } from './types'
 import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { toLocalInputValue } from './dateInput'
-import { isUberConfigured, locationText, buildUberDeepLink } from '@/lib/uber'
+import { isUberConfigured, locationText, buildUberDeepLink, isPlausibleUberTrip } from '@/lib/uber'
+import { getFieldProfile } from './segmentFieldProfiles'
 
 const fieldClassSmall = 'glass-card px-2.5 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 
@@ -84,16 +85,32 @@ export default function SegmentCard({ segment, passengers, nextSegment }: { segm
   const checkStatus = parseCheckStatus(segment.monitoring?.lastKnownData ?? null)
   const linkedPassengers = passengers.filter((p) => segment.passengerIds.includes(p.id))
 
+  // "Departure time" only makes sense for route-based segments — a hotel's
+  // equivalent scheduled moment is check-in, a restaurant's is its
+  // reservation time, etc. segmentFieldProfiles.ts already encodes this
+  // per transport type for the add/edit forms; reuse it here rather than
+  // hardcoding "departure" for every type (segment.departureTime is still
+  // the underlying field being updated for all of them — HOTEL's
+  // departureTimeLabel: 'Check-in' documents that it's the same column,
+  // just a different real-world label).
+  const reportTimeLabel = getFieldProfile(segment.transportType).departureTimeLabel
+  const reportTimeLabelLower = reportTimeLabel.charAt(0).toLowerCase() + reportTimeLabel.slice(1)
+
   // A deep link into Uber's own app with pickup/dropoff prefilled — not a
   // real booking, Maestravl has no payment infrastructure and never touches
   // money here (see lib/uber.ts). Only offered when this segment is
-  // actually disrupted and there's a real next segment with a resolvable
-  // location to get to; never a dead/fake-looking link.
+  // actually disrupted, there's a real next segment with a resolvable
+  // location to get to, AND the two ends are a realistic same-metro ride —
+  // not a cross-state/cross-country hop nobody could actually take
+  // (isPlausibleUberTrip requires both ends to resolve to known, nearby
+  // airport codes; free-text-only locations can't be geo-checked, so they
+  // don't get the link rather than risking a nonsense suggestion).
   const uberPickup = locationText(segment, 'arrival')
   const uberDropoff = nextSegment ? locationText(nextSegment, 'departure') : null
+  const uberPlausible = isPlausibleUberTrip(segment.arrivalLocationCode, nextSegment?.departureLocationCode ?? null)
   const clientId = process.env.NEXT_PUBLIC_UBER_CLIENT_ID
   const uberHref =
-    isUberConfigured() && clientId && (segment.status === 'DELAYED' || segment.status === 'CANCELLED') && uberPickup && uberDropoff
+    isUberConfigured() && clientId && (segment.status === 'DELAYED' || segment.status === 'CANCELLED') && uberPickup && uberDropoff && uberPlausible
       ? buildUberDeepLink({ clientId, pickup: uberPickup, dropoff: uberDropoff })
       : null
 
@@ -262,13 +279,13 @@ export default function SegmentCard({ segment, passengers, nextSegment }: { segm
               live monitoring.
             </p>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-editorial text-white/50" style={{ fontSize: '0.78rem' }}>New departure time:</span>
+              <span className="text-editorial text-white/50" style={{ fontSize: '0.78rem' }}>New {reportTimeLabelLower}:</span>
               <input
                 type="datetime-local"
                 value={reportNewTime}
                 onChange={(e) => setReportNewTime(e.target.value)}
                 className={fieldClassSmall}
-                aria-label="New departure time"
+                aria-label={`New ${reportTimeLabelLower}`}
               />
               <button
                 onClick={() => handleReport('DELAYED')}

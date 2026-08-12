@@ -21,6 +21,14 @@ import type { AgentRunStatus } from '@/lib/constants'
 const MODEL = 'gemini-3.6-flash'
 const REQUEST_TIMEOUT_MS = 15000
 const ACCEPT_CONFIDENCE_THRESHOLD = 70
+// gemini-3.6-flash spends tokens "thinking" before it emits the JSON
+// response, and those thinking tokens count against maxOutputTokens —
+// confirmed live (2026-08-12) that 256 was too tight: a real reply
+// consumed ~198 thinking tokens alone, truncating the JSON before it
+// closed and silently degrading every real classification to FALLBACK
+// (this is why reply interpretation looked "broken" the first time a real
+// provider reply was ever processed). 1024 leaves comfortable headroom.
+const MAX_OUTPUT_TOKENS = 1024
 
 export type ReplyIntent = 'ACCEPTED' | 'DECLINED' | 'COUNTER_OFFER' | 'UNCLEAR'
 
@@ -70,6 +78,7 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
       `The provider replied:\n"""\n${input.replyText}\n"""`,
       'Classify what this reply means. Respond with only ONE of these words: ACCEPTED, DECLINED, COUNTER_OFFER, UNCLEAR.',
       'ACCEPTED = they agreed to the requested or alternative time. DECLINED = they said no with no other option offered. COUNTER_OFFER = they proposed a different time or need more information first. UNCLEAR = ambiguous, unrelated, or an auto-reply.',
+      'confidence must be an INTEGER from 0 to 100 (not a 0-1 probability).',
     ].filter(Boolean).join('\n')
 
     const response = await client.models.generateContent({
@@ -81,12 +90,12 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
           type: 'OBJECT',
           properties: {
             intent: { type: 'STRING', enum: ['ACCEPTED', 'DECLINED', 'COUNTER_OFFER', 'UNCLEAR'] },
-            confidence: { type: 'NUMBER' },
+            confidence: { type: 'NUMBER', description: 'Integer 0-100, not a 0-1 probability' },
             note: { type: 'STRING' },
           },
           required: ['intent', 'confidence', 'note'],
         },
-        maxOutputTokens: 256,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       },
     })

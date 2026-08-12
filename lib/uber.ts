@@ -26,6 +26,42 @@ import { lookupAirport } from './data/airports'
 
 const DEEP_LINK_BASE = 'https://m.uber.com/looking'
 
+// Uber only ever makes sense for a genuinely local hop — the deep link
+// previously had no distance check at all, so it could suggest "get an
+// Uber" between two segments on opposite sides of a border (e.g. a
+// Kingston arrival to a Miami hotel), which nobody can actually ride. 80km
+// (~50mi) covers real same-metro cases (JFK<->EWR is ~25km, most
+// airport<->downtown hops are well under this) while excluding
+// cross-state/cross-country ones.
+const MAX_PLAUSIBLE_UBER_KM = 80
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const lat1 = (a.lat * Math.PI) / 180
+  const lat2 = (b.lat * Math.PI) / 180
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+/**
+ * True only when both codes resolve to known airports within real
+ * same-metro Uber range of each other. Returns false — never a guess —
+ * when either code is missing or unrecognized, since suggesting a ride
+ * between two unknown points would be exactly the kind of fabrication this
+ * feature is built to avoid (see the file header).
+ */
+export function isPlausibleUberTrip(pickupCode: string | null, dropoffCode: string | null): boolean {
+  if (!pickupCode || !dropoffCode) return false
+  if (pickupCode.toUpperCase() === dropoffCode.toUpperCase()) return true
+  const pickup = lookupAirport(pickupCode)
+  const dropoff = lookupAirport(dropoffCode)
+  if (!pickup || !dropoff) return false
+  if (pickup.country !== dropoff.country) return false
+  return haversineKm(pickup, dropoff) <= MAX_PLAUSIBLE_UBER_KM
+}
+
 export function isUberConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_UBER_CLIENT_ID)
 }

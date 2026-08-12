@@ -38,17 +38,19 @@ export async function searchOperators(query: string): Promise<TransitlandOperato
  * route_type follows the GTFS spec: 2 = rail, 3 = bus (see
  * https://gtfs.org/documentation/schedule/reference/#routestxt) — a
  * best-effort filter, not exhaustive (e.g. won't catch a subway/monorail
- * filed under TRAIN). Transitland's docs list both `route_type` and
- * `route_types` as accepted filter params without specifying which takes a
- * single value vs a list; `route_type` (singular) is used here since this
- * call always filters to exactly one — worth confirming against a live
- * response once a real API key is available (see docs/INTEGRATION.md).
+ * filed under TRAIN). Confirmed against live data (2026-08-12): `route_type`
+ * (singular) is unreliable — it silently returned zero results for
+ * Amtrak's rail routes (operator o-9-amtrak) even though 46 real route_type
+ * 2 routes exist and are returned by an unfiltered query, while it worked
+ * fine for MTA New York City Transit's bus/subway routes. `route_types`
+ * (plural) returned correct, consistently filtered results for both
+ * operators, so that's the one to use.
  */
 export async function searchRoutes(operatorOnestopId: string, query: string, routeType: number): Promise<TransitlandRoute[]> {
   const data = await get<{ routes: TransitlandRoute[] }>('/routes', {
     operator_onestop_id: operatorOnestopId,
     search: query,
-    route_type: String(routeType),
+    route_types: String(routeType),
     include_alerts: 'true',
     limit: '10',
   })
