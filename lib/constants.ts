@@ -30,8 +30,25 @@ export type DisruptionSeverity = typeof DISRUPTION_SEVERITIES[number]
 export const AGENT_RUN_STATUSES = [
   'DETECTED', 'ANALYZING', 'CONTACTING', 'WAITING_FOR_RESPONSE', 'RESCHEDULING',
   'CONFIRMED', 'FAILED', 'ALTERNATIVE_FOUND', 'ACTION_REQUIRED', 'COMPLETED',
+  // A newer disruption report came in for the same segment before this run
+  // finished — see lib/agents/detect.ts's handleDisruptionDetection, which
+  // supersedes any still-open run on a segment before starting a new one
+  // (found via live testing 2026-08-12: without this, two simultaneously
+  // "open" runs for one segment could leave the trip's status banner
+  // showing a stale, superseded run instead of the real latest state).
+  'SUPERSEDED',
 ] as const
 export type AgentRunStatus = typeof AGENT_RUN_STATUSES[number]
+
+// Terminal = this run is done, one way or another, and should never be
+// picked as "the thing needing your attention" over a still-open run.
+// Shared by the server-side supersede check (lib/agents/detect.ts) and the
+// client-side banner/panel (app/components/TripRecoveryStatus.tsx) so the
+// two never define "terminal" differently.
+const TERMINAL_AGENT_RUN_STATUSES: readonly AgentRunStatus[] = ['COMPLETED', 'FAILED', 'CONFIRMED', 'SUPERSEDED']
+export function isTerminalRunStatus(status: string): boolean {
+  return (TERMINAL_AGENT_RUN_STATUSES as readonly string[]).includes(status)
+}
 
 export const AGENT_ACTION_TYPES = [
   'ANALYZE_IMPACT', 'FIND_CONTACT', 'CONTACT_PROVIDER', 'REQUEST_RESCHEDULE',

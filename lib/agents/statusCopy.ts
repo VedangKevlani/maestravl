@@ -19,6 +19,7 @@ export const STATUS_COPY: Record<string, { headline: string; tone: 'progress' | 
   ACTION_REQUIRED: { headline: 'A couple of things need your attention', tone: 'attention' },
   FAILED: { headline: "Something didn't go through — here's what to do", tone: 'attention' },
   COMPLETED: { headline: "You're all set — nothing else needs your attention", tone: 'resolved' },
+  SUPERSEDED: { headline: 'Superseded by a newer report', tone: 'resolved' },
 }
 
 // Short, friendly label per action type — used for the single-line "live"
