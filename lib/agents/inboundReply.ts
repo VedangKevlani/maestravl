@@ -89,11 +89,19 @@ export async function processInboundReply(communicationId: string, email: Receiv
   // apart from "yes to the fallback time" and always applies the primary
   // one regardless (a real bug: a real reply accepted the fallback and
   // would have been silently rescheduled to the wrong time). Alternative's
-  // `selected` field already existed for exactly this, just unused before.
-  if (interpretation.intent === 'ACCEPTED') {
-    const chosen = interpretation.matchedTime === 'ALTERNATIVE' ? backupAlternative : interpretation.matchedTime === 'PRIMARY' ? primaryAlternative : null
-    if (chosen) {
-      await prisma.alternative.update({ where: { id: chosen.id }, data: { selected: true } })
+  // `selected` field already existed, but for a different purpose —
+  // orchestrator.ts's SEARCH_ALTERNATIVES defaults rank 1 to selected:true
+  // at creation time — so this has to explicitly *move* the flag (set the
+  // matched one true AND the other false), not just set the matched one
+  // true, or the two meanings collide and a stale default can outrank a
+  // real reply-driven selection.
+  if (interpretation.intent === 'ACCEPTED' && (primaryAlternative || backupAlternative)) {
+    const wantsAlternative = interpretation.matchedTime === 'ALTERNATIVE'
+    if (primaryAlternative) {
+      await prisma.alternative.update({ where: { id: primaryAlternative.id }, data: { selected: !wantsAlternative } })
+    }
+    if (backupAlternative) {
+      await prisma.alternative.update({ where: { id: backupAlternative.id }, data: { selected: wantsAlternative } })
     }
   }
 
