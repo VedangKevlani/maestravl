@@ -7,6 +7,7 @@ import UploadDropzone from '../../../components/UploadDropzone'
 import TripHeader from '../../../components/TripHeader'
 import TripRecoveryStatus from '../../../components/TripRecoveryStatus'
 import VoiceWidget from '../../../components/VoiceWidget'
+import HomeTimezoneBadge from '../../../components/HomeTimezoneBadge'
 import type { SegmentDTO, TripDTO } from '../../../components/types'
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,13 +15,16 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const session = await auth()
   const userId = session!.user.id
 
-  const trip = await prisma.trip.findFirst({
-    where: { id, userId },
-    include: {
-      passengers: true,
-      segments: { orderBy: { order: 'asc' }, include: { monitoring: true, passengerLinks: true } },
-    },
-  })
+  const [trip, user] = await Promise.all([
+    prisma.trip.findFirst({
+      where: { id, userId },
+      include: {
+        passengers: true,
+        segments: { orderBy: { order: 'asc' }, include: { monitoring: true, passengerLinks: true } },
+      },
+    }),
+    prisma.user.findUnique({ where: { id: userId }, select: { homeTimezone: true } }),
+  ])
   if (!trip) notFound()
 
   const dto: TripDTO = {
@@ -71,13 +75,17 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     <div>
       <TripHeader trip={dto} />
 
+      <div className="mt-3">
+        <HomeTimezoneBadge initialHomeTimezone={user?.homeTimezone ?? null} />
+      </div>
+
       <div className="mt-8">
         <TripRecoveryStatus tripId={dto.id} />
       </div>
 
       <section className="mt-2">
         <p className="text-label text-white/40 mb-3">timeline</p>
-        <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} />
+        <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} homeTimezone={user?.homeTimezone ?? null} />
       </section>
 
       <section className="mt-10">

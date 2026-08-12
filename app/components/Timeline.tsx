@@ -8,7 +8,7 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import SegmentCard from './SegmentCard'
 import type { PassengerDTO, SegmentDTO } from './types'
 
-export default function Timeline({ tripId, segments, passengers }: { tripId: string; segments: SegmentDTO[]; passengers: PassengerDTO[] }) {
+export default function Timeline({ tripId, segments, passengers, homeTimezone }: { tripId: string; segments: SegmentDTO[]; passengers: PassengerDTO[]; homeTimezone: string | null }) {
   const router = useRouter()
   const [items, setItems] = useState(segments)
   const [saving, setSaving] = useState(false)
@@ -54,7 +54,7 @@ export default function Timeline({ tripId, segments, passengers }: { tripId: str
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">
             {items.map((segment, i) => (
-              <SegmentCard key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} />
+              <SegmentCard key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
             ))}
           </div>
         </SortableContext>
