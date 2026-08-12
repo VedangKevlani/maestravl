@@ -31,6 +31,7 @@ const ACCEPT_CONFIDENCE_THRESHOLD = 70
 const MAX_OUTPUT_TOKENS = 1024
 
 export type ReplyIntent = 'ACCEPTED' | 'DECLINED' | 'COUNTER_OFFER' | 'UNCLEAR'
+export type MatchedTime = 'PRIMARY' | 'ALTERNATIVE' | 'NONE'
 
 export interface ReplyInterpretation {
   intent: ReplyIntent
@@ -38,12 +39,23 @@ export interface ReplyInterpretation {
   confidence: number
   /** One short sentence explaining the read, shown alongside the raw reply, never in place of it. */
   note: string
+  /**
+   * Which of the two times Maestravl offered the reply actually accepted —
+   * only meaningful when intent is ACCEPTED. Without this, an ACCEPTED read
+   * has no way to tell "yes to the primary time" apart from "yes to the
+   * fallback time", so confirm-reschedule would always apply the primary
+   * time regardless of which one was actually agreed to (a real bug found
+   * 2026-08-12: a real reply accepted the fallback and would have been
+   * silently rescheduled to the wrong time).
+   */
+  matchedTime: MatchedTime
 }
 
 const FALLBACK: ReplyInterpretation = {
   intent: 'UNCLEAR',
   confidence: 0,
   note: 'Could not interpret this reply automatically — read it yourself below.',
+  matchedTime: 'NONE',
 }
 
 export function isReplyInterpretationConfigured(): boolean {
@@ -79,6 +91,9 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
       'Classify what this reply means. Respond with only ONE of these words: ACCEPTED, DECLINED, COUNTER_OFFER, UNCLEAR.',
       'ACCEPTED = they agreed to the requested or alternative time. DECLINED = they said no with no other option offered. COUNTER_OFFER = they proposed a different time or need more information first. UNCLEAR = ambiguous, unrelated, or an auto-reply.',
       'confidence must be an INTEGER from 0 to 100 (not a 0-1 probability).',
+      requested && alternative
+        ? `matchedTime: only set when intent is ACCEPTED — "PRIMARY" if the time they agreed to is the primary requested time (${requested}), "ALTERNATIVE" if it's the fallback time (${alternative}) instead. Otherwise "NONE".`
+        : 'matchedTime: always "NONE" (no primary/alternative pair was offered).',
     ].filter(Boolean).join('\n')
 
     const response = await client.models.generateContent({
@@ -92,8 +107,9 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
             intent: { type: 'STRING', enum: ['ACCEPTED', 'DECLINED', 'COUNTER_OFFER', 'UNCLEAR'] },
             confidence: { type: 'NUMBER', description: 'Integer 0-100, not a 0-1 probability' },
             note: { type: 'STRING' },
+            matchedTime: { type: 'STRING', enum: ['PRIMARY', 'ALTERNATIVE', 'NONE'] },
           },
-          required: ['intent', 'confidence', 'note'],
+          required: ['intent', 'confidence', 'note', 'matchedTime'],
         },
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -112,6 +128,7 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
       intent: parsed.intent,
       confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(100, parsed.confidence)) : 0,
       note: parsed.note?.trim() || FALLBACK.note,
+      matchedTime: parsed.intent === 'ACCEPTED' && parsed.matchedTime === 'ALTERNATIVE' ? 'ALTERNATIVE' : parsed.intent === 'ACCEPTED' && parsed.matchedTime === 'PRIMARY' ? 'PRIMARY' : 'NONE',
     }
   } catch {
     return FALLBACK

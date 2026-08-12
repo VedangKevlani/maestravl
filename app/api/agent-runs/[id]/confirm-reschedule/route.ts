@@ -63,12 +63,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   for (const request of pendingRequests) {
     const segment = request.segment
-    const delta = segment.departureTime ? request.requestedTime.getTime() - segment.departureTime.getTime() : null
+
+    // A reply doesn't always accept the primary requested time — it might
+    // accept the fallback alternative instead (see
+    // lib/agents/inboundReply.ts, which marks whichever Alternative the
+    // reply actually matched as `selected`). Apply that one when it exists;
+    // only fall back to the plain requested time when no reply-driven
+    // selection was ever recorded (e.g. this run was confirmed without
+    // going through reply interpretation at all).
+    const selectedAlternative = await prisma.alternative.findFirst({
+      where: { agentRunId: id, segmentId: segment.id, selected: true },
+    })
+    const targetTime = selectedAlternative?.proposedTime ?? request.requestedTime
+    const delta = segment.departureTime ? targetTime.getTime() - segment.departureTime.getTime() : null
 
     await prisma.segment.update({
       where: { id: segment.id },
       data: {
-        departureTime: request.requestedTime,
+        departureTime: targetTime,
         arrivalTime: segment.arrivalTime && delta !== null ? new Date(segment.arrivalTime.getTime() + delta) : segment.arrivalTime,
         status: 'DELAYED',
       },

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { decideRunTransition, type ReplyInterpretation } from './replyInterpretation'
 
 function interpretation(overrides: Partial<ReplyInterpretation>): ReplyInterpretation {
-  return { intent: 'UNCLEAR', confidence: 0, note: 'test', ...overrides }
+  return { intent: 'UNCLEAR', confidence: 0, note: 'test', matchedTime: 'NONE', ...overrides }
 }
 
 describe('decideRunTransition', () => {

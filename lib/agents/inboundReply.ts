@@ -64,9 +64,12 @@ export async function processInboundReply(communicationId: string, email: Receiv
     data: { status: 'RESPONDED', respondedAt: new Date() },
   })
 
-  const [rescheduleRequest, backupAlternative] = await Promise.all([
+  const [rescheduleRequest, primaryAlternative, backupAlternative] = await Promise.all([
     prisma.rescheduleRequest.findFirst({
       where: { agentRunId: outbound.agentRunId, segmentId: outbound.segmentId, status: 'REQUESTED' },
+    }),
+    prisma.alternative.findFirst({
+      where: { agentRunId: outbound.agentRunId, segmentId: outbound.segmentId, rank: 1 },
     }),
     prisma.alternative.findFirst({
       where: { agentRunId: outbound.agentRunId, segmentId: outbound.segmentId, rank: 2 },
@@ -80,6 +83,19 @@ export async function processInboundReply(communicationId: string, email: Receiv
     alternativeTime: backupAlternative?.proposedTime ?? null,
     timezone: outbound.segment.timezone,
   })
+
+  // Record which of the two offered times was actually accepted — without
+  // this, confirm-reschedule has no way to tell "yes to the primary time"
+  // apart from "yes to the fallback time" and always applies the primary
+  // one regardless (a real bug: a real reply accepted the fallback and
+  // would have been silently rescheduled to the wrong time). Alternative's
+  // `selected` field already existed for exactly this, just unused before.
+  if (interpretation.intent === 'ACCEPTED') {
+    const chosen = interpretation.matchedTime === 'ALTERNATIVE' ? backupAlternative : interpretation.matchedTime === 'PRIMARY' ? primaryAlternative : null
+    if (chosen) {
+      await prisma.alternative.update({ where: { id: chosen.id }, data: { selected: true } })
+    }
+  }
 
   await prisma.agentAction.create({
     data: {
