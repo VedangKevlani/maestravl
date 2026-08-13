@@ -5,13 +5,26 @@
 // wrapping the pure lib/agents/analyze.ts.
 //
 // Uses Groq rather than Gemini: confirmed (Aug 2026) Groq's free tier needs
-// no credit card and allows 14,400 requests/day (30/minute) on
-// llama-3.3-70b-versatile — Gemini's free tier worked out to roughly 20
-// requests/day in practice for this workload, too tight for a voice UI
-// used repeatedly in one session. Groq's API is OpenAI-compatible, called
-// here via plain fetch (no SDK dependency, same convention as every other
-// external integration in this codebase besides @google/genai and
-// Resend/Supabase).
+// no credit card and allows 14,400 requests/day (30/minute) — Gemini's free
+// tier worked out to roughly 20 requests/day in practice for this workload,
+// too tight for a voice UI used repeatedly in one session. Groq's API is
+// OpenAI-compatible, called here via plain fetch (no SDK dependency, same
+// convention as every other external integration in this codebase besides
+// @google/genai and Resend/Supabase).
+//
+// Two models, not one — confirmed live (2026-08-13) that neither is
+// flawless on its own: llama-3.3-70b-versatile has the better free-tier
+// headroom (12K TPM vs. gpt-oss-120b's 8K — both 30 RPM) but intermittently
+// emits a malformed internal function-call format Groq's backend rejects
+// outright with a 400 ("Failed to call a function. Please adjust your
+// prompt."), a known Llama-specific tool-calling quirk, not a bug in this
+// codebase's request shape. gpt-oss-120b is OpenAI's own open-weight
+// model, natively trained on this exact tool-call JSON format, so it
+// doesn't hit that failure mode — but its lower TPM means it's more prone
+// to rate-limiting under a token-heavy system prompt. Since Groq's rate
+// limits are tracked per model (independent buckets), falling back from
+// one to the other on ANY failure is strictly better than retrying the
+// same model: it recovers from both failure modes, not just one.
 //
 // Deliberately read-only: there is no mutating tool anywhere in this file's
 // tool loop. The voice assistant can describe what the passenger could do
@@ -30,7 +43,8 @@ import { toSpeakableText } from './sanitizeSpeech'
 import type { VoiceContext, VoiceTurnMessage } from './types'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = 'llama-3.3-70b-versatile'
+const PRIMARY_MODEL = 'llama-3.3-70b-versatile'
+const FALLBACK_MODEL = 'openai/gpt-oss-120b'
 // The model can batch every tool call it needs into one turn, so a normal
 // exchange resolves in 1-2 iterations (a function-call round, then a final
 // text round). This is a safety rail against a confused tool-call loop,
@@ -79,12 +93,12 @@ type ChatMessage =
   | { role: 'system' | 'user' | 'assistant'; content: string | null; tool_calls?: GroqToolCall[] }
   | { role: 'tool'; content: string; tool_call_id: string }
 
-async function callGroq(apiKey: string, messages: ChatMessage[]): Promise<GroqMessage> {
+async function callGroqOnce(apiKey: string, model: string, messages: ChatMessage[]): Promise<GroqMessage> {
   const res = await fetch(GROQ_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       messages,
       tools: VOICE_TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
       tool_choice: 'auto',
@@ -102,6 +116,15 @@ async function callGroq(apiKey: string, messages: ChatMessage[]): Promise<GroqMe
   const message = data.choices?.[0]?.message
   if (!message) throw new Error('Groq API returned no message')
   return message
+}
+
+/** Tries PRIMARY_MODEL first; on any failure (malformed tool-call generation, rate limit, transient network error) falls back to FALLBACK_MODEL once. Since Groq tracks rate limits per model, this recovers from a rate-limited primary the same way it recovers from a malformed-generation primary — a same-model retry could only ever help with the latter. */
+async function callGroq(apiKey: string, messages: ChatMessage[]): Promise<GroqMessage> {
+  try {
+    return await callGroqOnce(apiKey, PRIMARY_MODEL, messages)
+  } catch {
+    return callGroqOnce(apiKey, FALLBACK_MODEL, messages)
+  }
 }
 
 export async function runVoiceTurn(opts: {
@@ -135,7 +158,13 @@ export async function runVoiceTurn(opts: {
     for (const call of message.tool_calls) {
       let args: unknown = {}
       try {
-        args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
+        // A no-arg call can come back as the literal string "null" (seen
+        // live from gpt-oss-120b for get_itinerary, which takes no
+        // arguments) — JSON.parse("null") legitimately yields the JS
+        // value null, not {}, which would otherwise fail every no-arg
+        // tool's z.object({}).strict() schema for no real reason.
+        const parsed: unknown = call.function.arguments ? JSON.parse(call.function.arguments) : {}
+        args = parsed ?? {}
       } catch {
         args = {}
       }
