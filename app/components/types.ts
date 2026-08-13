@@ -38,6 +38,18 @@ export interface SegmentDTO {
   confidenceScores: string | null
   monitoring: MonitoringDTO | null
   passengerIds: string[]
+  activeRun: ActiveRunDTO | null
+}
+
+// The one open (or most recently resolved) recovery run for this segment,
+// if any — lets the boarding pass show live disruption status without a
+// separate polling endpoint. See lib/constants.ts's isTerminalRunStatus for
+// how "active" is chosen when a segment has more than one recent run.
+export interface ActiveRunDTO {
+  id: string
+  status: string
+  summary: string | null
+  pendingRescheduleCount: number
 }
 
 export interface PassengerDTO {

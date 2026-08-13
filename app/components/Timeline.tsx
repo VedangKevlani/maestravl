@@ -5,8 +5,14 @@ import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import SegmentCard from './SegmentCard'
+import BoardingPass from './BoardingPass'
 import type { PassengerDTO, SegmentDTO } from './types'
+
+// How often the boarding passes re-pull the page's server data while open,
+// so a disruption the passenger didn't cause themselves (background
+// monitoring, a provider's own reply landing) still surfaces within a few
+// seconds rather than waiting for the next manual reload.
+const REFRESH_POLL_MS = 4000
 
 export default function Timeline({ tripId, segments, passengers, homeTimezone }: { tripId: string; segments: SegmentDTO[]; passengers: PassengerDTO[]; homeTimezone: string | null }) {
   const router = useRouter()
@@ -19,6 +25,15 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
   useEffect(() => {
     setItems(segments)
   }, [segments])
+
+  // Skipped mid-drag so a poll landing between pointerdown and drop can't
+  // yank the list out from under a reorder in progress.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!saving) router.refresh()
+    }, REFRESH_POLL_MS)
+    return () => clearInterval(timer)
+  }, [router, saving])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -54,7 +69,7 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">
             {items.map((segment, i) => (
-              <SegmentCard key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
+              <BoardingPass key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
             ))}
           </div>
         </SortableContext>

@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ headless: false });
+const page = await browser.newPage({ viewport: { width: 1400, height: 1100 } });
+await page.goto('http://localhost:3000/login', { waitUntil: 'networkidle' });
+await page.fill('#email', 'kevlanivedang28@gmail.com');
+await page.fill('#password', process.env.TEST_LOGIN_PASSWORD);
+await page.click('button[type=submit]');
+await page.waitForURL('**/dashboard', { timeout: 40000 });
+await page.goto('http://localhost:3000/system-health', { waitUntil: 'networkidle' });
+await page.waitForTimeout(4000);
+await page.screenshot({ path: 'e2e/output/system_health_fresh.png', fullPage: true });
+await browser.close();

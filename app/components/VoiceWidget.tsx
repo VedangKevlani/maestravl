@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { VoiceTurnMessage, PendingVoiceAction } from '@/lib/voice/types'
 
 // SpeechRecognition isn't in TypeScript's bundled DOM types (only its
@@ -40,6 +41,7 @@ const SPEECH_ERROR_MESSAGES: Record<string, string> = {
 }
 
 export default function VoiceWidget({ tripId }: { tripId: string }) {
+  const router = useRouter()
   const [state, setState] = useState<WidgetState>('idle')
   const [supported, setSupported] = useState(true)
   const [transcript, setTranscript] = useState<string | null>(null)
@@ -89,7 +91,15 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
       }
 
       setReply(data.reply)
+      // A pending action existing before this turn means this turn was very
+      // likely the passenger's confirm/reject reply to it (report_delay,
+      // check_live_status, or respond_to_reschedule) — those write to the
+      // trip, so the boarding pass needs a fresh server fetch to actually
+      // show the change instead of sitting on stale props until the next
+      // background poll or manual reload.
+      const wasConfirming = pendingActionRef.current !== null
       pendingActionRef.current = data.pendingAction ?? null
+      if (wasConfirming) router.refresh()
       const userTurn: VoiceTurnMessage = { role: 'user', content: transcriptText }
       const assistantTurn: VoiceTurnMessage = { role: 'assistant', content: data.reply }
       historyRef.current = [...historyRef.current, userTurn, assistantTurn].slice(-MAX_HISTORY)

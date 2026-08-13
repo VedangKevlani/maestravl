@@ -59,6 +59,14 @@ export default function TripHeader({ trip }: { trip: TripDTO }) {
           <span className="text-label px-3 py-1.5 rounded-full whitespace-nowrap" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788' }}>
             {trip.status}
           </span>
+          <a
+            href={`/api/trips/${trip.id}/activity/pdf`}
+            className="text-label text-white/40 hover:text-white/80 whitespace-nowrap"
+            style={{ fontSize: '0.65rem' }}
+            title="Download this trip's full recovery history as a PDF, for a support conversation"
+          >
+            Activity log (PDF)
+          </a>
           <TripCardMenu tripId={trip.id} tripTitle={trip.title} redirectTo="/dashboard" />
         </div>
       </div>

@@ -52,7 +52,6 @@ next-env.d.ts
 /prisma/dev.db
 /prisma/dev.db-journal
 /storage/
-e2e/output/
 e2e/fixtures/*.png
 e2e/fixtures/*.pdf
 

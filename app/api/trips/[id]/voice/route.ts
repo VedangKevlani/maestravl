@@ -63,12 +63,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     tripId,
     userId: auth.userId,
     pendingAction: parsed.data.pendingAction,
-  }).catch(() => ({
-    replyText: 'Maestravl is having trouble right now — please try again in a moment.',
-    // Nothing was mutated if the call itself failed — safer to force a
-    // fresh propose next time than to guess whether stale state still applies.
-    pendingAction: null,
-  }))
+  }).catch((err) => {
+    // Previously swallowed entirely — a live failure left zero trace
+    // anywhere, making it undebuggable. Logging first means the next
+    // occurrence shows up in the deployment's function logs with a real
+    // stack trace instead of just this generic passenger-facing reply.
+    console.error('[voice] runVoiceTurn failed', err)
+    return {
+      replyText: 'Maestravl is having trouble right now — please try again in a moment.',
+      // Nothing was mutated if the call itself failed — safer to force a
+      // fresh propose next time than to guess whether stale state still applies.
+      pendingAction: null,
+    }
+  })
 
   const speech = await synthesizeSpeech(replyText)
 
