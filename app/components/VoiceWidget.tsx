@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import type { VoiceTurnMessage, PendingVoiceAction } from '@/lib/voice/types'
+import type { VoiceTurnMessage } from '@/lib/voice/types'
 
 // SpeechRecognition isn't in TypeScript's bundled DOM types (only its
 // supporting types — SpeechRecognitionResultList etc. — are), and the
@@ -41,7 +40,6 @@ const SPEECH_ERROR_MESSAGES: Record<string, string> = {
 }
 
 export default function VoiceWidget({ tripId }: { tripId: string }) {
-  const router = useRouter()
   const [state, setState] = useState<WidgetState>('idle')
   const [supported, setSupported] = useState(true)
   const [transcript, setTranscript] = useState<string | null>(null)
@@ -49,12 +47,6 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const historyRef = useRef<VoiceTurnMessage[]>([])
-  // A mutating tool call (report a delay / check live status / respond to
-  // a reschedule) the assistant proposed but hasn't confirmed yet — opaque
-  // to this widget, just held and echoed back on the next turn so the
-  // server can replay it into the model's context instead of relying on
-  // its memory of what it said (see lib/voice/agent.ts).
-  const pendingActionRef = useRef<PendingVoiceAction | null>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const capturedTranscriptRef = useRef<string>('')
   // onend's closure captures `state` as of when startListening() ran (always
@@ -80,7 +72,7 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
       const res = await fetch(`/api/trips/${tripId}/voice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: transcriptText, history: historyRef.current, pendingAction: pendingActionRef.current }),
+        body: JSON.stringify({ transcript: transcriptText, history: historyRef.current }),
       })
       const data = await res.json().catch(() => ({}))
 
@@ -91,15 +83,9 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
       }
 
       setReply(data.reply)
-      // A pending action existing before this turn means this turn was very
-      // likely the passenger's confirm/reject reply to it (report_delay,
-      // check_live_status, or respond_to_reschedule) — those write to the
-      // trip, so the boarding pass needs a fresh server fetch to actually
-      // show the change instead of sitting on stale props until the next
-      // background poll or manual reload.
-      const wasConfirming = pendingActionRef.current !== null
-      pendingActionRef.current = data.pendingAction ?? null
-      if (wasConfirming) router.refresh()
+      // Nothing here ever writes to the trip (the voice assistant is
+      // read-only — see lib/voice/systemPrompt.ts), so there's no server
+      // state for the rest of the page to catch up on after a turn.
       const userTurn: VoiceTurnMessage = { role: 'user', content: transcriptText }
       const assistantTurn: VoiceTurnMessage = { role: 'assistant', content: data.reply }
       historyRef.current = [...historyRef.current, userTurn, assistantTurn].slice(-MAX_HISTORY)
@@ -209,6 +195,7 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
         disabled={state === 'thinking' || state === 'speaking'}
         aria-label={label[state]}
         title={label[state]}
+        data-tour="voice-widget"
         className="glass-card rounded-full flex items-center justify-center disabled:opacity-60 select-none"
         style={{
           width: '3.25rem',

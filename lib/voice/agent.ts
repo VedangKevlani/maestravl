@@ -1,36 +1,36 @@
-// Impure — the only network call in this file is to the Gemini API; the
-// tool execution it drives (executeTool below) is a thin dispatch over the
-// pure functions in toolExecutors.ts, which is what's actually unit
-// tested. Not tested directly here, same convention as
-// lib/agents/orchestrator.ts wrapping the pure lib/agents/analyze.ts.
+// Impure — the only network call in this file is to the Groq API; the tool
+// execution it drives (executeTool below) is a thin dispatch over the pure
+// functions in toolExecutors.ts, which is what's actually unit tested. Not
+// tested directly here, same convention as lib/agents/orchestrator.ts
+// wrapping the pure lib/agents/analyze.ts.
 //
-// Uses Google Gemini rather than a paid provider: Gemini's free tier for
-// Flash models is genuinely ongoing and non-expiring (rate-limited, no
-// card, no trial clock) — the only paid option in this whole pipeline is
-// the fully optional ElevenLabs primary voice (see lib/voice/tts.ts);
-// everything else, including this reasoning step, has no billing path.
-import {
-  GoogleGenAI,
-  createPartFromFunctionResponse,
-  type Content,
-  type FunctionCall,
-} from '@google/genai'
+// Uses Groq rather than Gemini: confirmed (Aug 2026) Groq's free tier needs
+// no credit card and allows 14,400 requests/day (30/minute) on
+// llama-3.3-70b-versatile — Gemini's free tier worked out to roughly 20
+// requests/day in practice for this workload, too tight for a voice UI
+// used repeatedly in one session. Groq's API is OpenAI-compatible, called
+// here via plain fetch (no SDK dependency, same convention as every other
+// external integration in this codebase besides @google/genai and
+// Resend/Supabase).
+//
+// Deliberately read-only: there is no mutating tool anywhere in this file's
+// tool loop. The voice assistant can describe what the passenger could do
+// (report a delay, check live status, accept/reject a reschedule) but never
+// performs it — see lib/voice/systemPrompt.ts for why, and toolExecutors.ts
+// for confirmation there's no propose/confirm counterpart left to call.
 import {
   VOICE_TOOLS,
   GetItineraryArgsSchema,
   GetSegmentStatusArgsSchema,
   GetRecoveryActivityArgsSchema,
-  ReportDelayArgsSchema,
-  CheckLiveStatusArgsSchema,
-  RespondToRescheduleArgsSchema,
 } from './tools'
 import { executeGetItinerary, executeGetSegmentStatus, executeGetRecoveryActivity } from './toolExecutors'
-import { executeReportDelay, executeCheckLiveStatus, executeRespondToReschedule, type MutationMeta } from './mutationExecutors'
 import { buildSystemPrompt } from './systemPrompt'
-import { deriveNextPendingAction } from './pendingActionBookkeeping'
-import type { VoiceContext, VoiceTurnMessage, PendingVoiceAction } from './types'
+import { toSpeakableText } from './sanitizeSpeech'
+import type { VoiceContext, VoiceTurnMessage } from './types'
 
-const MODEL = 'gemini-3.6-flash'
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const MODEL = 'llama-3.3-70b-versatile'
 // The model can batch every tool call it needs into one turn, so a normal
 // exchange resolves in 1-2 iterations (a function-call round, then a final
 // text round). This is a safety rail against a confused tool-call loop,
@@ -38,11 +38,11 @@ const MODEL = 'gemini-3.6-flash'
 const MAX_TOOL_ITERATIONS = 4
 const REQUEST_TIMEOUT_MS = 15000
 
-export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY)
+export function isGroqConfigured(): boolean {
+  return Boolean(process.env.GROQ_API_KEY)
 }
 
-async function executeTool(name: string, rawArgs: unknown, context: VoiceContext, meta: MutationMeta): Promise<Record<string, unknown>> {
+function executeTool(name: string, rawArgs: unknown, context: VoiceContext): Record<string, unknown> {
   try {
     switch (name) {
       case 'get_itinerary':
@@ -52,12 +52,6 @@ async function executeTool(name: string, rawArgs: unknown, context: VoiceContext
         return executeGetSegmentStatus(context, GetSegmentStatusArgsSchema.parse(rawArgs))
       case 'get_recovery_activity':
         return executeGetRecoveryActivity(context, GetRecoveryActivityArgsSchema.parse(rawArgs))
-      case 'report_delay':
-        return await executeReportDelay(context, ReportDelayArgsSchema.parse(rawArgs), meta)
-      case 'check_live_status':
-        return await executeCheckLiveStatus(context, CheckLiveStatusArgsSchema.parse(rawArgs), meta)
-      case 'respond_to_reschedule':
-        return await executeRespondToReschedule(context, RespondToRescheduleArgsSchema.parse(rawArgs), meta)
       default:
         return { error: `Unknown tool: ${name}` }
     }
@@ -66,78 +60,89 @@ async function executeTool(name: string, rawArgs: unknown, context: VoiceContext
   }
 }
 
+// --- Minimal local types for Groq's OpenAI-compatible chat completions
+// response — just what this file reads, not a full SDK surface.
+interface GroqToolCall {
+  id: string
+  function: { name: string; arguments: string }
+}
+interface GroqMessage {
+  role: string
+  content: string | null
+  tool_calls?: GroqToolCall[]
+}
+interface GroqChatCompletion {
+  choices?: { message: GroqMessage }[]
+}
+
+type ChatMessage =
+  | { role: 'system' | 'user' | 'assistant'; content: string | null; tool_calls?: GroqToolCall[] }
+  | { role: 'tool'; content: string; tool_call_id: string }
+
+async function callGroq(apiKey: string, messages: ChatMessage[]): Promise<GroqMessage> {
+  const res = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      tools: VOICE_TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
+      tool_choice: 'auto',
+      max_tokens: 1024,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null) as { error?: { message?: string } } | null
+    throw new Error(errBody?.error?.message ?? `Groq API responded ${res.status}`)
+  }
+
+  const data = (await res.json()) as GroqChatCompletion
+  const message = data.choices?.[0]?.message
+  if (!message) throw new Error('Groq API returned no message')
+  return message
+}
+
 export async function runVoiceTurn(opts: {
   context: VoiceContext
   history: VoiceTurnMessage[]
   transcript: string
-  tripId: string
-  userId: string
-  pendingAction?: PendingVoiceAction | null
-}): Promise<{ replyText: string; pendingAction: PendingVoiceAction | null }> {
-  const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) // reads GEMINI_API_KEY at call time if omitted, but explicit is clearer here
-  const systemInstruction = buildSystemPrompt(opts.context)
-  // One per HTTP call, not per tool call — the same-turn confirm guard in
-  // lib/voice/pendingAction.ts compares against this, so a propose and a
-  // confirm both happening within this one runVoiceTurn (the tool loop can
-  // iterate MAX_TOOL_ITERATIONS times) is structurally impossible to sneak
-  // past, not just discouraged by the system prompt.
-  const requestNonce = crypto.randomUUID()
-  const meta: MutationMeta = { tripId: opts.tripId, userId: opts.userId, requestNonce }
+}): Promise<{ replyText: string }> {
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) throw new Error('GROQ_API_KEY is not configured')
 
-  const contents: Content[] = []
-  if (opts.pendingAction) {
-    // Replay the exact prior propose call + its result as a real turn,
-    // rather than relying on the model's memory of the prose summary it
-    // spoke — this is the same Content shape the loop below already
-    // produces natively within one turn, just reconstructed from the
-    // previous HTTP call instead.
-    contents.push({ role: 'model', parts: [{ functionCall: { name: opts.pendingAction.toolName, args: opts.pendingAction.toolArgs } }] })
-    contents.push({
-      role: 'user',
-      parts: [createPartFromFunctionResponse(opts.pendingAction.toolName, opts.pendingAction.toolName, opts.pendingAction.toolResult)],
-    })
-  }
-  contents.push(
-    ...opts.history.map((m): Content => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    { role: 'user', parts: [{ text: opts.transcript }] }
-  )
-
-  let pendingAction: PendingVoiceAction | null = opts.pendingAction ?? null
+  const messages: ChatMessage[] = [
+    { role: 'system', content: buildSystemPrompt(opts.context) },
+    ...opts.history.map((m): ChatMessage => ({ role: m.role, content: m.content })),
+    { role: 'user', content: opts.transcript },
+  ]
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const response = await client.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: VOICE_TOOLS }],
-        maxOutputTokens: 1024,
-        abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      },
-    })
+    const message = await callGroq(apiKey, messages)
 
-    const functionCalls = response.functionCalls
-    if (!functionCalls || functionCalls.length === 0) {
-      const text = response.text?.trim()
-      return { replyText: text || "I'm here, but I didn't catch what to say — could you try again?", pendingAction }
+    if (!message.tool_calls || message.tool_calls.length === 0) {
+      const text = message.content?.trim()
+      return { replyText: toSpeakableText(text || "I'm here, but I didn't catch what to say — could you try again?") }
     }
 
-    const modelTurn = response.candidates?.[0]?.content
-    if (modelTurn) contents.push(modelTurn)
+    messages.push({ role: 'assistant', content: message.content, tool_calls: message.tool_calls })
 
-    // Sequential, not Promise.all — these can be real mutations, and
-    // running two of them concurrently within one turn is worth avoiding
-    // even though the model rarely batches more than one mutating call.
-    const parts = []
-    for (const call of functionCalls as FunctionCall[]) {
-      const name = call.name ?? ''
-      const args = (call.args ?? {}) as Record<string, unknown>
-      const output = await executeTool(name, call.args, opts.context, meta)
-      pendingAction = deriveNextPendingAction(name, args, output, pendingAction)
-      parts.push(createPartFromFunctionResponse(call.id ?? name ?? 'unknown', name || 'unknown', output))
+    // Sequential, not Promise.all — these are synchronous pure functions
+    // anyway, but kept in call order for the same reason the Gemini loop
+    // was: the model rarely batches more than one call, and predictable
+    // ordering makes a confused multi-call turn easier to debug.
+    for (const call of message.tool_calls) {
+      let args: unknown = {}
+      try {
+        args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
+      } catch {
+        args = {}
+      }
+      const output = executeTool(call.function.name, args, opts.context)
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(output) })
     }
-    contents.push({ role: 'user', parts })
   }
 
-  return { replyText: "I've got a lot going on right now — could you ask that again in a moment?", pendingAction }
+  return { replyText: toSpeakableText("I've got a lot going on right now — could you ask that again in a moment?") }
 }

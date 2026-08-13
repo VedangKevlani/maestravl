@@ -79,12 +79,13 @@ export default async function DashboardPage() {
   return (
     <div>
       <div className="flex items-center justify-between gap-4 flex-wrap mb-8 sm:mb-10">
-        <div>
+        <div data-tour="dashboard-heading">
           <p className="text-label text-white/40 mb-2">your trips</p>
           <h1 className="text-display text-white" style={{ fontSize: 'clamp(1.8rem, 4vw, 2.6rem)' }}>Dashboard</h1>
         </div>
         <Link
           href="/trips/new"
+          data-tour="new-trip-button"
           className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-full text-editorial font-medium whitespace-nowrap shrink-0"
           style={{ background: 'var(--warm-white)', color: 'var(--charcoal)' }}
         >

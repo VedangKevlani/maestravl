@@ -29,6 +29,7 @@
 
 import { prisma } from '@/lib/db'
 import { sendDisruptionImpactEmail, sendProviderEmail } from '@/lib/email'
+import { sendDisruptionImpactText, isTextChannelConfigured, type TextChannel } from '@/lib/sms'
 import { segmentLabel } from '@/lib/segmentLabel'
 import { buildReplyAddress } from '@/lib/inboundReplyAddress'
 import { planAnalysis, type PlannerSegment } from './analyze'
@@ -115,6 +116,8 @@ interface ContactOutcome {
   impact: SegmentImpact
   segment: SegmentRow
   contacted: boolean
+  /** A phone/web-form/portal contact Contact Discovery found but can't auto-message (see isAutoContactable) — surfaced to the passenger as a manual fallback instead of silently escalating with nothing to show. */
+  fallbackContact: { channel: string; value: string } | null
 }
 
 async function runAnalysis(agentRunId: string) {
@@ -213,6 +216,13 @@ async function contactProvider(
       : `No usable contact information found for ${label} in the booking confirmation or itinerary notes.`,
   })
 
+  // Captured before the isAutoContactable check — TS narrows `contact` to
+  // `null` inside `if (!isAutoContactable(contact))` (a type-predicate's
+  // negated branch narrows to "not the predicate's type", not "false for
+  // whatever runtime reason"), which would make a real discovered-but-not-
+  // auto-contactable contact wrongly untypeable there.
+  const fallbackContact = contact ? { channel: contact.channel, value: contact.value } : null
+
   if (!isAutoContactable(contact)) {
     if (contact) {
       await logAction(agentRunId, {
@@ -221,7 +231,7 @@ async function contactProvider(
         description: `Only a low-confidence or non-email contact was found for ${label} — not contacting automatically.`,
       })
     }
-    return { impact, segment, contacted: false }
+    return { impact, segment, contacted: false, fallbackContact }
   }
 
   return sendContactRequest(agentRunId, segment, impact, contact, label, reasonText, allSegments)
@@ -323,7 +333,7 @@ async function sendContactRequest(
       })
     }
 
-    return { impact, segment, contacted: true }
+    return { impact, segment, contacted: true, fallbackContact: null }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'
     await prisma.communication.update({ where: { id: communication.id }, data: { status: 'FAILED', errorMessage } })
@@ -334,7 +344,7 @@ async function sendContactRequest(
       detail: { error: errorMessage },
       status: 'FAILED',
     })
-    return { impact, segment, contacted: false }
+    return { impact, segment, contacted: false, fallbackContact: null }
   }
 }
 
@@ -347,32 +357,50 @@ async function notifyPassengersOfImpact(
   contactResults: ContactOutcome[]
 ) {
   const disruptedLabel = segmentLabel(disruptedSegment)
-  const affected = contactResults.map(({ impact, segment, contacted }) => ({
+  const affected = contactResults.map(({ impact, segment, contacted, fallbackContact }) => ({
     label: segmentLabel(segment),
     reason: impact.reason || fallbackReason,
     contacted,
+    fallbackContact,
   }))
 
-  const recipients = trip.passengers.filter((p) => p.email)
-  let anySucceeded = false
-  const results: { recipient: string; success: boolean; error?: string }[] = []
+  const attempts: { passenger: (typeof trip.passengers)[number]; channel: 'EMAIL' | TextChannel }[] = []
+  for (const passenger of trip.passengers) {
+    if (passenger.email) attempts.push({ passenger, channel: 'EMAIL' })
+    if (passenger.phone && isTextChannelConfigured('SMS')) attempts.push({ passenger, channel: 'SMS' })
+    if (passenger.phone && isTextChannelConfigured('WHATSAPP')) attempts.push({ passenger, channel: 'WHATSAPP' })
+  }
 
-  for (const passenger of recipients) {
+  let anySucceeded = false
+  const results: { recipient: string; channel: string; success: boolean; error?: string }[] = []
+
+  for (const { passenger, channel } of attempts) {
+    const recipient = channel === 'EMAIL' ? passenger.email! : passenger.phone!
     try {
-      await sendDisruptionImpactEmail(passenger.email!, {
-        recipientName: passenger.name,
-        tripTitle: trip.title,
-        disruptedSegmentLabel: disruptedLabel,
-        newStatus: disruption.newStatus,
-        delayMinutes: disruption.delayMinutes,
-        newDepartureTime: disruption.newDepartureTime,
-        timezone: disruptedSegment.timezone,
-        affected,
-      })
+      if (channel === 'EMAIL') {
+        await sendDisruptionImpactEmail(recipient, {
+          recipientName: passenger.name,
+          tripTitle: trip.title,
+          disruptedSegmentLabel: disruptedLabel,
+          newStatus: disruption.newStatus,
+          delayMinutes: disruption.delayMinutes,
+          newDepartureTime: disruption.newDepartureTime,
+          timezone: disruptedSegment.timezone,
+          affected,
+        })
+      } else {
+        await sendDisruptionImpactText(channel, recipient, {
+          tripTitle: trip.title,
+          disruptedSegmentLabel: disruptedLabel,
+          newStatus: disruption.newStatus,
+          delayMinutes: disruption.delayMinutes,
+          affected,
+        })
+      }
       anySucceeded = true
-      results.push({ recipient: passenger.email!, success: true })
+      results.push({ recipient, channel, success: true })
     } catch (err) {
-      results.push({ recipient: passenger.email!, success: false, error: err instanceof Error ? err.message : 'Unknown error' })
+      results.push({ recipient, channel, success: false, error: err instanceof Error ? err.message : 'Unknown error' })
     }
   }
 
@@ -380,12 +408,12 @@ async function notifyPassengersOfImpact(
     type: 'NOTIFY_PASSENGER',
     segmentId: null,
     description:
-      recipients.length === 0
-        ? 'No passenger email on file — could not send the impact summary.'
+      attempts.length === 0
+        ? 'No passenger email or phone on file for any configured channel — could not send the impact summary.'
         : anySucceeded
           ? 'Passenger notified of the disruption and what it affects.'
           : 'Failed to notify passenger of the disruption impact.',
     detail: results,
-    status: recipients.length === 0 ? 'FAILED' : anySucceeded ? 'EXECUTED' : 'FAILED',
+    status: attempts.length === 0 ? 'FAILED' : anySucceeded ? 'EXECUTED' : 'FAILED',
   })
 }

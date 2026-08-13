@@ -39,6 +39,15 @@ model User {
   // view (see app/components/HomeTimezoneBadge.tsx), never guessed server-side.
   homeTimezone String?
 
+  // Null = hasn't completed or dismissed the interactive onboarding tour
+  // (app/components/onboarding/) — shown on next login/signup either way,
+  // per spec: both a new signup and an existing user who hasn't seen it
+  // yet should get it. Set once, via app/api/user/onboarding/route.ts,
+  // when the tour finishes OR is skipped — "skip" is a deliberate dismiss,
+  // not a snooze, so it doesn't nag every login (there's a separate
+  // "retake tour" affordance for anyone who wants it again).
+  onboardingCompletedAt DateTime?
+
   trips       Trip[]
   resetTokens PasswordResetToken[]
 }
@@ -63,13 +72,12 @@ model Trip {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  passengers          Passenger[]
-  segments            Segment[]
-  documents           Document[]
-  notificationLogs    NotificationLog[]
-  disruptions         Disruption[]
-  agentRuns           AgentRun[]
-  voicePendingActions VoicePendingAction[]
+  passengers       Passenger[]
+  segments         Segment[]
+  documents        Document[]
+  notificationLogs NotificationLog[]
+  disruptions      Disruption[]
+  agentRuns        AgentRun[]
 }
 
 model Passenger {
@@ -220,9 +228,10 @@ model NotificationLog {
   previousStatus String?
   newStatus      String
 
-  /// EMAIL | NONE (NONE = no recipient email on file, logged but not sent)
+  /// EMAIL | SMS | WHATSAPP | NONE (NONE = no usable contact on file for any channel, logged but not sent)
   channel        String  @default("EMAIL")
   recipientEmail String?
+  recipientPhone String?
   recipientName  String?
   subject        String?
   success        Boolean @default(false)
@@ -420,37 +429,4 @@ model Alternative {
   selected         Boolean   @default(false)
 
   createdAt DateTime @default(now())
-}
-
-// Short-lived, single-use record of a voice-assistant mutating action the
-// passenger has been told about but not yet confirmed — see
-// lib/voice/pendingAction.ts. Exists specifically so a "propose, then
-// confirm" voice exchange (report a delay / check live status / respond to
-// a reschedule) survives the round-trip between two separate turns with its
-// *exact* original parameters intact, rather than asking the model to
-// re-derive them from memory of what it said (a real correctness risk: two
-// independent date/timezone derivations aren't guaranteed to agree). The
-// client only ever holds and echoes back this row's opaque id — never
-// inspects or reconstructs its contents.
-model VoicePendingAction {
-  id     String @id @default(cuid())
-  tripId String
-  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  userId String
-
-  /// 'report_delay' | 'check_live_status' | 'respond_to_reschedule'
-  tool String
-  /// JSON-encoded frozen args — segmentId+status+newDepartureTime, segmentId, or agentRunId
-  args String
-
-  // Which runVoiceTurn call created this — a confirm attempt presented
-  // within the *same* call (the tool-calling loop can iterate multiple
-  // times per HTTP request) is rejected, since that would mean the model
-  // confirmed its own proposal without the passenger's next reply ever
-  // happening.
-  requestNonce String
-
-  createdAt  DateTime  @default(now())
-  expiresAt  DateTime
-  consumedAt DateTime?
 }

@@ -64,17 +64,3 @@ export interface VoiceTurnMessage {
   role: 'user' | 'assistant'
   content: string
 }
-
-/**
- * Frozen record of a mutating tool call the passenger has been told about
- * but not yet confirmed — round-tripped opaquely by the client between
- * turns (see lib/voice/pendingAction.ts and app/components/VoiceWidget.tsx).
- * toolResult is the literal propose-mode response the model already saw,
- * replayed verbatim into the next turn's conversation history so the model
- * never has to re-derive what it proposed from memory.
- */
-export interface PendingVoiceAction {
-  toolName: string
-  toolArgs: Record<string, unknown>
-  toolResult: Record<string, unknown>
-}

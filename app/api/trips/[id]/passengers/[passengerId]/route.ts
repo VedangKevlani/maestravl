@@ -5,6 +5,7 @@ import { requireUserId } from '@/lib/apiAuth'
 
 const UpdatePassengerSchema = z.object({
   email: z.string().trim().email().optional().or(z.literal('')),
+  phone: z.string().trim().max(40).optional().or(z.literal('')),
 })
 
 async function findOwnedPassenger(tripId: string, passengerId: string, userId: string) {
@@ -28,9 +29,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
   }
 
+  // Partial update — only touch fields the client actually sent, so an
+  // email-only edit can't silently null out a phone number that was set
+  // separately, and vice versa.
+  const data: { email?: string | null; phone?: string | null } = {}
+  if ('email' in parsed.data) data.email = parsed.data.email || null
+  if ('phone' in parsed.data) data.phone = parsed.data.phone || null
+
   const passenger = await prisma.passenger.update({
     where: { id: passengerId },
-    data: { email: parsed.data.email || null },
+    data,
   })
 
   return NextResponse.json({ passenger })

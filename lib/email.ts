@@ -104,8 +104,8 @@ export async function sendDisruptionImpactEmail(
     newDepartureTime: Date | null
     /** The disrupted segment's own timezone — see lib/agents/message.ts's formatTime for why this must never fall back to the server's incidental local zone. */
     timezone: string | null
-    /** `contacted: true` means Maestravl actually sent a request to this provider (see sendProviderEmail) — false means no usable contact was found and the passenger needs to follow up themselves. */
-    affected: { label: string; reason: string; contacted: boolean }[]
+    /** `contacted: true` means Maestravl actually sent a request to this provider (see sendProviderEmail) — false means no usable contact was found and the passenger needs to follow up themselves. `fallbackContact` — when set on an uncontacted item — is a phone number, web form, or portal URL Contact Discovery found but can't act on automatically (see lib/agents/contact.ts's isAutoContactable), surfaced so the passenger has something to go on instead of just "we couldn't reach them." */
+    affected: { label: string; reason: string; contacted: boolean; fallbackContact?: { channel: string; value: string } | null }[]
   }
 ) {
   const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
@@ -120,14 +120,14 @@ export async function sendDisruptionImpactEmail(
     : ''
 
   const affectedHtml = opts.affected
-    .map(
-      (a) =>
-        `<li><strong>${a.label}</strong> — ${a.reason} ${
-          a.contacted
-            ? "We've reached out to request a change and are waiting to hear back."
-            : "We couldn't find a way to contact them automatically — you may want to confirm directly with them for now."
-        }</li>`
-    )
+    .map((a) => {
+      const followUp = a.contacted
+        ? "We've reached out to request a change and are waiting to hear back."
+        : a.fallbackContact
+          ? `We couldn't contact them automatically, but found a ${a.fallbackContact.channel.toLowerCase()} contact: ${escapeHtml(a.fallbackContact.value)} — you may want to reach out directly.`
+          : "We couldn't find a way to contact them automatically — you may want to confirm directly with them for now."
+      return `<li><strong>${a.label}</strong> — ${a.reason} ${followUp}</li>`
+    })
     .join('')
 
   const { error } = await resend.emails.send({

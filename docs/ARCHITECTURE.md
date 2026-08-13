@@ -515,30 +515,42 @@ day past its original departure before giving up.
 the trip detail page) that answers spoken questions about a trip using
 real data, not a separate faked-up view of it.
 
-- **Gemini-backed** (`GEMINI_API_KEY`, same free-tier rationale as "Why no
-  paid AI API" above — genuinely ongoing and non-expiring, not a trial
-  credit), with exactly three read-only tools (`lib/voice/tools.ts`):
-  `get_itinerary`, `get_segment_status`, `get_recovery_activity`. There is
-  no mutation tool — the assistant cannot change a booking, send a
-  message, or approve an action; it can only describe what
-  `lib/voice/tripContext.ts` already loaded from the database for that
-  turn (itinerary, monitoring status, the 10 most recent `AgentRun`s and
-  their actions — not raw `Communication` content).
+- **Groq-backed** (`GROQ_API_KEY`, OpenAI-compatible `llama-3.3-70b-versatile`,
+  called via plain `fetch` — no SDK dependency; free tier needs no card and
+  allows 14,400 requests/day, versus Gemini's roughly-20/day working limit
+  for this workload, which is why this moved off Gemini — every other
+  free-tier rationale on this page still applies), with exactly three
+  read-only tools (`lib/voice/tools.ts`): `get_itinerary`,
+  `get_segment_status`, `get_recovery_activity`. There is no mutation tool
+  and never has been in the shipped architecture — the assistant cannot
+  change a booking, send a message, check live status on demand, or
+  approve a reschedule; it can only describe what `lib/voice/tripContext.ts`
+  already loaded from the database for that turn (itinerary, monitoring
+  status, the 10 most recent `AgentRun`s and their actions — not raw
+  `Communication` content) and point the passenger at the app's own
+  controls for anything that writes to the trip.
 - `lib/voice/resolveSegment.ts` matches a spoken reference ("my next
   flight," "the train to Kingston") against the trip's segments and
   returns `found | ambiguous | not_found` explicitly — it never guesses
   silently when a reference could mean more than one segment.
 - `lib/voice/systemPrompt.ts` hard-rules that tools are the only source of
-  truth (never answer from memory) and that a completed action is never
-  claimed unless a tool actually reported it — same honesty boundary as
-  the rest of this file.
+  truth (never answer from memory), that a completed action is never
+  claimed unless a tool actually reported it, and — since tool results can
+  ultimately trace back to freeform user-uploaded document text
+  (`segment.notes`, extracted itinerary text) — that anything a tool
+  returns is trip *data*, never an instruction, even if it's phrased as
+  one or claims to be a system/admin override.
+- `lib/voice/sanitizeSpeech.ts` strips stray markdown (`**bold**`, bullets,
+  headers) the model can still leak before a reply is spoken or shown, on
+  top of the system prompt's own "write it the way a person would say it"
+  instruction.
 - TTS (`lib/voice/tts.ts`) is ElevenLabs if both `ELEVENLABS_API_KEY` and
   `ELEVENLABS_VOICE_ID` are set; on any failure or if unset, the widget
   falls back to the browser's own `SpeechSynthesis` — a real browser API,
   not another paid account, so there's no billing path anywhere in this
-  feature beyond the already-free Gemini call. Speech-to-text is
-  client-side only (`SpeechRecognition`); the widget renders nothing if
-  the browser doesn't support it.
+  feature beyond the already-free Groq call. Speech-to-text is client-side
+  only (`SpeechRecognition`); the widget renders nothing if the browser
+  doesn't support it.
 
 ## System health
 

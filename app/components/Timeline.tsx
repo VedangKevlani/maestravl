@@ -64,7 +64,7 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
   }
 
   return (
-    <div>
+    <div data-tour="timeline">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { sendStatusChangeEmail } from '@/lib/email'
+import { sendStatusChangeText, isTextChannelConfigured, type TextChannel } from '@/lib/sms'
 import { getAdapterForTransportType } from './registry'
 import { handleDisruptionDetection } from '@/lib/agents/detect'
 import { segmentLabel } from '@/lib/segmentLabel'
@@ -96,7 +97,14 @@ export async function initializeMonitoringForSegment(segmentId: string) {
 
 export { segmentLabel }
 
-/** Emails every passenger on the segment about a status change and logs the attempt(s). */
+/**
+ * Notifies every passenger on the segment about a status change over every
+ * channel they have a usable contact for — email if they have one, SMS/
+ * WhatsApp if they have a phone number and that channel is configured — and
+ * logs each attempt independently. A passenger overwhelmed mid-disruption
+ * or without signal may never see the email in time, so this doesn't stop
+ * at the first channel that works.
+ */
 async function notifyPassengersOfStatusChange(segmentId: string, previousStatus: string | null, newStatus: string) {
   const segment = await prisma.segment.findUnique({
     where: { id: segmentId },
@@ -108,9 +116,16 @@ async function notifyPassengersOfStatusChange(segmentId: string, previousStatus:
   if (!segment) return
 
   const label = segmentLabel(segment)
-  const recipients = segment.passengerLinks.map((link) => link.passenger).filter((p) => p.email)
+  const passengers = segment.passengerLinks.map((link) => link.passenger)
 
-  if (recipients.length === 0) {
+  const attempts: { passenger: (typeof passengers)[number]; channel: 'EMAIL' | TextChannel }[] = []
+  for (const passenger of passengers) {
+    if (passenger.email) attempts.push({ passenger, channel: 'EMAIL' })
+    if (passenger.phone && isTextChannelConfigured('SMS')) attempts.push({ passenger, channel: 'SMS' })
+    if (passenger.phone && isTextChannelConfigured('WHATSAPP')) attempts.push({ passenger, channel: 'WHATSAPP' })
+  }
+
+  if (attempts.length === 0) {
     await prisma.notificationLog.create({
       data: {
         tripId: segment.tripId,
@@ -119,29 +134,40 @@ async function notifyPassengersOfStatusChange(segmentId: string, previousStatus:
         newStatus,
         channel: 'NONE',
         success: false,
-        errorMessage: 'No passenger email on file',
+        errorMessage: 'No passenger email or phone on file for any configured channel',
       },
     })
     return
   }
 
-  for (const passenger of recipients) {
+  for (const { passenger, channel } of attempts) {
     try {
-      const subject = await sendStatusChangeEmail(passenger.email!, {
-        recipientName: passenger.name,
-        segmentLabel: label,
-        tripTitle: segment.trip.title,
-        previousStatus,
-        newStatus,
-      })
+      let subject: string | undefined
+      if (channel === 'EMAIL') {
+        subject = await sendStatusChangeEmail(passenger.email!, {
+          recipientName: passenger.name,
+          segmentLabel: label,
+          tripTitle: segment.trip.title,
+          previousStatus,
+          newStatus,
+        })
+      } else {
+        await sendStatusChangeText(channel, passenger.phone!, {
+          recipientName: passenger.name,
+          segmentLabel: label,
+          tripTitle: segment.trip.title,
+          newStatus,
+        })
+      }
       await prisma.notificationLog.create({
         data: {
           tripId: segment.tripId,
           segmentId: segment.id,
           previousStatus,
           newStatus,
-          channel: 'EMAIL',
-          recipientEmail: passenger.email,
+          channel,
+          recipientEmail: channel === 'EMAIL' ? passenger.email : null,
+          recipientPhone: channel === 'EMAIL' ? null : passenger.phone,
           recipientName: passenger.name,
           subject,
           success: true,
@@ -154,8 +180,9 @@ async function notifyPassengersOfStatusChange(segmentId: string, previousStatus:
           segmentId: segment.id,
           previousStatus,
           newStatus,
-          channel: 'EMAIL',
-          recipientEmail: passenger.email,
+          channel,
+          recipientEmail: channel === 'EMAIL' ? passenger.email : null,
+          recipientPhone: channel === 'EMAIL' ? null : passenger.phone,
           recipientName: passenger.name,
           success: false,
           errorMessage: err instanceof Error ? err.message : 'Failed to send notification',

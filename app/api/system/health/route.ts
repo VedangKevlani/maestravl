@@ -25,6 +25,8 @@ export async function GET() {
     recentFlightCheck,
     transitCandidates,
     webLookupContactCount,
+    sentSmsCount,
+    sentWhatsAppCount,
   ] = await Promise.all([
     prisma.communication.count({ where: { direction: 'OUTBOUND', status: { in: ['SENT', 'RESPONDED'] } } }),
     prisma.communication.count({ where: { direction: 'INBOUND' } }),
@@ -51,6 +53,8 @@ export async function GET() {
       select: { lastKnownData: true },
     }),
     prisma.providerContact.count({ where: { source: 'WEB_LOOKUP' } }),
+    prisma.notificationLog.count({ where: { channel: 'SMS', success: true } }),
+    prisma.notificationLog.count({ where: { channel: 'WHATSAPP', success: true } }),
   ])
 
   const recentTransitCheck = transitCandidates.some((r) => {
@@ -118,9 +122,23 @@ export async function GET() {
       evidence: webLookupContactCount > 0 ? `${webLookupContactCount} contact${webLookupContactCount === 1 ? '' : 's'} discovered via web search` : null,
     },
     {
+      id: 'sms-notifications',
+      label: 'Passenger SMS (Twilio)',
+      configured: has('TWILIO_ACCOUNT_SID') && has('TWILIO_AUTH_TOKEN') && has('TWILIO_SMS_FROM'),
+      confirmed: sentSmsCount > 0,
+      evidence: sentSmsCount > 0 ? `${sentSmsCount} SMS notification${sentSmsCount === 1 ? '' : 's'} sent` : null,
+    },
+    {
+      id: 'whatsapp-notifications',
+      label: 'Passenger WhatsApp (Twilio Sandbox)',
+      configured: has('TWILIO_ACCOUNT_SID') && has('TWILIO_AUTH_TOKEN') && has('TWILIO_WHATSAPP_FROM'),
+      confirmed: sentWhatsAppCount > 0,
+      evidence: sentWhatsAppCount > 0 ? `${sentWhatsAppCount} WhatsApp notification${sentWhatsAppCount === 1 ? '' : 's'} sent` : 'Sandbox recipients must text the join code once before Maestravl can message them — see .env.example',
+    },
+    {
       id: 'voice-assistant',
-      label: 'Voice assistant (Gemini)',
-      configured: has('GEMINI_API_KEY'),
+      label: 'Voice assistant (Groq)',
+      configured: has('GROQ_API_KEY'),
       confirmed: null,
       evidence: 'Read-only — no lasting evidence to check beyond configuration',
     },

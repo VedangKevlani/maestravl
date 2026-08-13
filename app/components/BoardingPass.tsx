@@ -289,7 +289,7 @@ export default function BoardingPass({ segment, passengers, nextSegment, homeTim
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="glass-card p-5 flex gap-4">
+    <div ref={setNodeRef} style={style} data-tour="segment-card" className="glass-card p-5 flex gap-4">
       <button
         {...attributes} {...listeners}
         aria-label="Drag to reorder"

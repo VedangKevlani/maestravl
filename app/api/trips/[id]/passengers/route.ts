@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { requireUserId } from '@/lib/apiAuth'
 import { sendPassengerAddedEmail } from '@/lib/email'
+import { sendPassengerAddedText, isTextChannelConfigured } from '@/lib/sms'
 import { segmentLabel } from '@/lib/monitoring/service'
 import { resolveSegmentZones } from '@/lib/dateFormat'
 
@@ -55,6 +56,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       })
     } catch (err) {
       console.error('Failed to send passenger-added email', err)
+    }
+  }
+
+  if (passenger.phone) {
+    // Best-effort, same convention as the email above — a failed text
+    // shouldn't fail passenger creation, and SMS/WhatsApp are independent
+    // (a passenger can get both if both are configured).
+    if (isTextChannelConfigured('SMS')) {
+      try {
+        await sendPassengerAddedText('SMS', passenger.phone, { recipientName: passenger.name, tripTitle: trip.title })
+      } catch (err) {
+        console.error('Failed to send passenger-added SMS', err)
+      }
+    }
+    if (isTextChannelConfigured('WHATSAPP')) {
+      try {
+        await sendPassengerAddedText('WHATSAPP', passenger.phone, { recipientName: passenger.name, tripTitle: trip.title })
+      } catch (err) {
+        console.error('Failed to send passenger-added WhatsApp message', err)
+      }
     }
   }
 

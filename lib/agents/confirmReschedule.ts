@@ -1,13 +1,12 @@
 // Impure mutation body extracted from
-// app/api/agent-runs/[id]/confirm-reschedule/route.ts so the voice
-// assistant's respond_to_reschedule tool (lib/voice/mutationExecutors.ts)
-// performs the *exact* same mutation the "Confirm — update itinerary" /
-// "Not quite" buttons already do — not a second, potentially-drifting copy.
-// The route itself becomes a thin auth/ownership + status-mapping wrapper
-// around this. See that route's original header comment for why this is
-// the one place a recovery run's own action is allowed to rewrite a
-// Segment's scheduled time: gated behind an explicit human confirmation,
-// the same trust boundary as a manual segment edit.
+// app/api/agent-runs/[id]/confirm-reschedule/route.ts, kept separate so the
+// route itself is a thin auth/ownership + status-mapping wrapper around it.
+// See that route's original header comment for why this is the one place a
+// recovery run's own action is allowed to rewrite a Segment's scheduled
+// time: gated behind an explicit human confirmation via the "Confirm —
+// update itinerary" / "Not quite" buttons — the same trust boundary as a
+// manual segment edit. The voice assistant has no path to this at all; it
+// is strictly read-only (see lib/voice/systemPrompt.ts).
 import { prisma } from '@/lib/db'
 import { segmentLabel } from '@/lib/segmentLabel'
 import type { AgentRun } from '@prisma/client'

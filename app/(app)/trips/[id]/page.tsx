@@ -114,7 +114,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     <div>
       <TripHeader trip={dto} />
 
-      <div className="mt-3">
+      <div className="mt-3" data-tour="home-timezone">
         <HomeTimezoneBadge initialHomeTimezone={user?.homeTimezone ?? null} />
       </div>
 
@@ -123,12 +123,12 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} homeTimezone={user?.homeTimezone ?? null} />
       </section>
 
-      <section className="mt-10">
+      <section className="mt-10" data-tour="add-segment-form">
         <p className="text-label text-white/40 mb-3">add a segment</p>
         <TransportTypeForm tripId={dto.id} />
       </section>
 
-      <section className="mt-10 mb-10">
+      <section className="mt-10 mb-10" data-tour="upload-more">
         <p className="text-label text-white/40 mb-3">import another document</p>
         <UploadDropzone tripId={dto.id} />
       </section>
