@@ -13,8 +13,8 @@ export type SceneProps = { progress: MotionValue<number> }
 
 const SCENES: { Component: ComponentType<SceneProps>; weight: number }[] = [
   { Component: Scene1Silence, weight: 130 },
-  { Component: Scene2Moment, weight: 150 },
-  { Component: Scene3CascadeEffect, weight: 160 },
+  { Component: Scene2Moment, weight: 210 },
+  { Component: Scene3CascadeEffect, weight: 260 },
   { Component: Scene5MaestravlAppears, weight: 260 },
   { Component: Scene7Caribbean, weight: 240 },
   { Component: Scene8Technology, weight: 240 },
