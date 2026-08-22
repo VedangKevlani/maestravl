@@ -53,6 +53,10 @@ export default function AppHeader({
       <div className={styles.icons}>
         <RestartTourButton className={styles.tourBtn} />
 
+        <Link href="/dashboard" className={styles.tripsBtn}>
+          Your Trips
+        </Link>
+
         {tripId && (
           <button
             type="button"
@@ -70,7 +74,7 @@ export default function AppHeader({
         </Link>
 
         <span className={styles.greet} title={userEmail}>
-          Hi, <span className={styles.greetName}>{displayName}</span>
+          Hi, <span className={styles.greetName}>{displayName}</span>!
         </span>
 
         <div className={styles.menuWrap} ref={menuRef}>

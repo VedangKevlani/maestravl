@@ -36,8 +36,9 @@
 .subtitle {
   font-size: 13px;
   color: var(--muted);
-  line-height: 1.6;
-  margin: 0 0 30px;
+  line-height: 1.5;
+  margin: 8px 0 30px;
+  max-width: 520px;
 }
 
 .groupLabel {
@@ -133,5 +134,8 @@
 @media (max-width: 700px) {
   .wrap {
     padding: 16px 18px 56px;
+  }
+  .title {
+    font-size: 19px;
   }
 }

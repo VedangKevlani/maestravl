@@ -5,7 +5,8 @@
 // so it can be mounted once at the (app) layout level and stay correct
 // across client-side nav.
 import { useRef, useState } from 'react'
-import { X, Mic, Send, UserRound } from 'lucide-react'
+import { X, Mic, Send } from 'lucide-react'
+import { UserTieIcon } from '../UserTieIcon'
 import styles from '../../styles/chatPopup.module.css'
 import { useChat } from './ChatProvider'
 import { useVoiceTurn } from './useVoiceTurn'
@@ -50,7 +51,7 @@ function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => vo
       style={position ? { top: position.top, left: position.left, right: 'auto', bottom: 'auto' } : undefined}
     >
       <div className={styles.drag} style={{ touchAction: 'none', cursor: 'grab' }} {...dragHandleProps}>
-        <div className={styles.avatar}><UserRound size={14} strokeWidth={2} /></div>
+        <div className={styles.avatar}><UserTieIcon size={14} strokeWidth={2} /></div>
         <div className={styles.headingWrap}>
           <div className={styles.heading}>Chat with Maestro</div>
           {subheading && <div className={styles.subheading}>{subheading}</div>}

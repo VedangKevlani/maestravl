@@ -91,7 +91,7 @@ export const TOUR_STEPS: TourStep[] = [
     path: TRIP_PATH,
     target: 'add-segment-form',
     title: 'Add a segment',
-    note: 'A flight, train, hotel — anything with a time and place. Pick a type, fill in what you know, and add it to the timeline. Try it now.',
+    note: 'A flight, train, hotel — anything with a time and place. Click "+ New Trip Segment," pick a type, and fill in what you know. Try it now.',
     placement: 'top',
     completion: { selectorCountIncreases: '[data-tour="segment-card"]' },
   },

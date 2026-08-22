@@ -95,7 +95,7 @@ export default function OnboardingOverlay() {
   const holeRight = Math.min(rect.right + PAD, vw)
   const holeBottom = Math.min(rect.bottom + PAD, vh)
 
-  const scrimStyle: React.CSSProperties = { position: 'fixed', background: 'rgba(10,10,10,0.68)', pointerEvents: 'auto', zIndex: 200 }
+  const scrimStyle: React.CSSProperties = { position: 'fixed', background: 'var(--overlay-scrim)', pointerEvents: 'auto', zIndex: 200 }
 
   // HALF/FULL_BOX_BUDGET are conservative estimates of this box's rendered
   // size (a fixed ~20rem/320px wide box, but height varies with each
@@ -148,7 +148,10 @@ export default function OnboardingOverlay() {
   })()
 
   const arrowBase: React.CSSProperties = { position: 'absolute', width: 0, height: 0, borderStyle: 'solid' }
-  const CALLOUT_BG = 'rgba(24,24,24,0.98)'
+  // Matches .glass-card's own background (rgba(27,29,34,0.78)) at a slightly
+  // higher opacity — the callout needs to stay legible over any content
+  // behind it, unlike glass-card's usual translucent use over video/scenes.
+  const CALLOUT_BG = 'rgba(27,29,34,0.98)'
   const arrowStyle: React.CSSProperties = (() => {
     switch (placement) {
       case 'top':
@@ -185,7 +188,10 @@ export default function OnboardingOverlay() {
           position: 'fixed',
           zIndex: 201,
           borderRadius: 12,
-          boxShadow: '0 0 0 2px rgba(245,243,239,0.85), 0 0 24px rgba(245,243,239,0.25)',
+          // Same accent-glow language the app uses elsewhere for an active
+          // selection (see trip.module.css's chip focus ring) rather than a
+          // plain white halo — ties the spotlight back to the app's accent.
+          boxShadow: '0 0 0 2px var(--accent), 0 0 24px rgba(143,193,128,0.35)',
           pointerEvents: 'none',
         }}
       />
@@ -208,29 +214,48 @@ export default function OnboardingOverlay() {
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
             className="glass-card"
-            style={{ position: 'relative', background: CALLOUT_BG, padding: '1.1rem 1.25rem' }}
+            style={{
+              position: 'relative',
+              background: CALLOUT_BG,
+              border: '1.5px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-pop)',
+              padding: '1.1rem 1.25rem',
+            }}
           >
             <div style={arrowStyle} />
-            <p className="text-label text-white/30 mb-1.5" style={{ fontSize: '0.6rem' }}>
+            <p className="text-label mb-1.5" style={{ fontSize: '0.6rem', color: 'var(--faint)' }}>
               {stepIndex + 1} of {totalSteps}
             </p>
-            <h3 className="text-editorial text-white font-medium mb-1.5" style={{ fontSize: '0.95rem' }}>{step.title}</h3>
-            <p className="text-editorial text-white/65 mb-4" style={{ fontSize: '0.82rem', lineHeight: 1.55 }}>{step.note}</p>
+            <h3 className="text-editorial font-medium mb-1.5" style={{ fontSize: '0.95rem', color: 'var(--ink)' }}>{step.title}</h3>
+            <p className="text-editorial mb-4" style={{ fontSize: '0.82rem', lineHeight: 1.55, color: 'var(--muted)' }}>{step.note}</p>
             <div className="flex items-center justify-between gap-3">
               {isInteractive ? (
-                <button onClick={advance} className="text-label text-white/35 hover:text-white/70" style={{ fontSize: '0.62rem' }}>
+                <button
+                  onClick={advance}
+                  className="text-label transition-colors"
+                  style={{ fontSize: '0.62rem', color: 'var(--faint)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--muted)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--faint)')}
+                >
                   Skip this step
                 </button>
               ) : (
                 <button
                   onClick={advance}
-                  className="px-4 py-1.5 rounded-full text-label"
-                  style={{ background: 'var(--warm-white)', color: 'var(--charcoal)', fontSize: '0.65rem' }}
+                  className="px-4 py-1.5 text-label"
+                  style={{ background: 'var(--accent)', color: '#0a0b0e', borderRadius: 'var(--radius-pill)', fontSize: '0.65rem' }}
                 >
                   {isLast ? 'Finish' : 'Next'}
                 </button>
               )}
-              <button onClick={dismiss} className="text-label text-white/25 hover:text-white/60" style={{ fontSize: '0.62rem' }}>
+              <button
+                onClick={dismiss}
+                className="text-label transition-colors"
+                style={{ fontSize: '0.62rem', color: 'var(--faint)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--muted)')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--faint)')}
+              >
                 Skip tour
               </button>
             </div>

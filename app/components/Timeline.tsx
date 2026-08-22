@@ -7,6 +7,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import BoardingPass from './BoardingPass'
 import type { PassengerDTO, SegmentDTO } from './types'
+import styles from '../styles/trip.module.css'
 
 // How often the boarding passes re-pull the page's server data while open,
 // so a disruption the passenger didn't cause themselves (background
@@ -67,7 +68,7 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
     <div data-tour="timeline">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-          <div className="flex flex-col gap-3">
+          <div className={`${styles.segList} flex flex-col`}>
             {items.map((segment, i) => (
               <BoardingPass key={segment.id} tripId={tripId} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
             ))}

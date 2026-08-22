@@ -71,6 +71,23 @@
   color: var(--shell-ink);
 }
 
+.tripsBtn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--shell-accent, #52b788);
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border-radius: var(--shell-radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tripsBtn:hover {
+  background: var(--shell-hover);
+  color: var(--shell-accent, #52b788);
+}
+
 .iconBtn {
   width: 30px;
   height: 30px;
@@ -182,5 +199,13 @@
   }
   .main {
     padding: 24px 18px 40px;
+  }
+  .greet {
+    font-size: 12px;
+  }
+  .tourBtn,
+  .tripsBtn {
+    font-size: 11px;
+    padding: 6px 6px;
   }
 }

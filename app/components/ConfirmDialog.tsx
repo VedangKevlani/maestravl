@@ -47,7 +47,7 @@ export default function ConfirmDialog({
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)' }}
+      style={{ background: 'var(--overlay-scrim)' }}
       onClick={(e) => { e.stopPropagation(); onCancel() }}
     >
       <div
@@ -57,12 +57,18 @@ export default function ConfirmDialog({
         aria-describedby="confirm-dialog-message"
         onClick={(e) => e.stopPropagation()}
         className="glass-card p-6 w-full"
-        style={{ maxWidth: '26rem', background: 'rgba(20,20,20,0.97)' }}
+        style={{
+          maxWidth: '26rem',
+          background: 'var(--card)',
+          border: '1.5px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-pop)',
+        }}
       >
-        <h2 id="confirm-dialog-title" className="text-editorial text-white font-semibold mb-2" style={{ fontSize: '1.05rem' }}>
+        <h2 id="confirm-dialog-title" className="text-editorial font-semibold mb-2" style={{ fontSize: '1.05rem', color: 'var(--ink)' }}>
           {title}
         </h2>
-        <p id="confirm-dialog-message" className="text-editorial text-white/60 mb-6" style={{ fontSize: '0.85rem', lineHeight: 1.5 }}>
+        <p id="confirm-dialog-message" className="text-editorial mb-6" style={{ fontSize: '0.85rem', lineHeight: 1.5, color: 'var(--muted)' }}>
           {message}
         </p>
         <div className="flex justify-end gap-2">
@@ -70,8 +76,8 @@ export default function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="px-4 py-2 rounded-full text-label border border-white/15 disabled:opacity-50"
-            style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}
+            className="px-4 py-2 text-label disabled:opacity-50"
+            style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-pill)', color: 'var(--muted)', fontSize: '0.7rem' }}
           >
             {cancelLabel}
           </button>
@@ -80,11 +86,11 @@ export default function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="px-4 py-2 rounded-full text-label disabled:opacity-50"
+            className="px-4 py-2 text-label disabled:opacity-50"
             style={
               danger
-                ? { background: 'rgba(229,72,77,0.15)', color: '#e5484d', border: '1px solid rgba(229,72,77,0.3)' }
-                : { background: 'var(--warm-white)', color: 'var(--charcoal)' }
+                ? { background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-pill)', fontSize: '0.7rem' }
+                : { background: 'var(--accent)', color: '#0a0b0e', borderRadius: 'var(--radius-pill)', fontSize: '0.7rem' }
             }
           >
             {loading ? 'Working…' : confirmLabel}

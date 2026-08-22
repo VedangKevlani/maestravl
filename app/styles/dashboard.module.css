@@ -115,6 +115,18 @@
   .tripGrid {
     grid-template-columns: 1fr;
   }
+  .tripCard {
+    padding: 22px 20px 20px;
+  }
+  .dashTitle {
+    font-size: 24px;
+  }
+  .tripCardName {
+    font-size: 15px;
+  }
+  .tripCardDates {
+    font-size: 12px;
+  }
 }
 
 .tripCard {

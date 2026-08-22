@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef } from 'react'
-import { X, Mail, Phone, User } from 'lucide-react'
+import { X, Mail, Phone, User, Users } from 'lucide-react'
 import styles from '../styles/passengersModal.module.css'
 import type { PassengerDTO } from './types'
 
@@ -42,7 +42,13 @@ export default function ManagePassengersModal({ tripId, passengers, open, onClos
           <h2 className={styles.title}>Passengers</h2>
           <hr className={styles.hr} />
 
-          {passengers.map((p) => (
+          {passengers.length === 0 ? (
+            <div className={styles.emptyState}>
+              <Users size={22} />
+              <p>No passengers on this trip yet. Add one to start linking them to segments.</p>
+            </div>
+          ) : (
+            passengers.map((p) => (
             <div key={p.id} className={styles.passengerListRow}>
               <div className={styles.passengerAvatar}>
                 <User size={16} />
@@ -77,7 +83,8 @@ export default function ManagePassengersModal({ tripId, passengers, open, onClos
                 Edit
               </button>
             </div>
-          ))}
+            ))
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
             <button 

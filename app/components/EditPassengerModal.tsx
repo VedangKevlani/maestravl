@@ -13,6 +13,19 @@ interface Props {
   isFirstPassenger: boolean
 }
 
+// Splits the stored "phoneCountry phoneArea phoneNumber" string (the same
+// format handleSave joins on save) back into its three parts for editing.
+// Falls back to putting the whole thing in the last field if it doesn't
+// look like the expected shape, rather than silently dropping data.
+function parsePhone(phone: string | null): { country: string; area: string; number: string } {
+  if (!phone) return { country: '', area: '', number: '' }
+  const parts = phone.trim().split(/\s+/)
+  if (parts.length >= 3 && /^\+?\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+    return { country: parts[0], area: parts[1], number: parts.slice(2).join(' ') }
+  }
+  return { country: '', area: '', number: phone }
+}
+
 export default function EditPassengerModal({ tripId, passenger, open, onClose, isFirstPassenger }: Props) {
   const router = useRouter()
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -38,15 +51,16 @@ export default function EditPassengerModal({ tripId, passenger, open, onClose, i
         const first = parts[0] || ''
         const last = parts.length > 1 ? parts[parts.length - 1] : ''
         const middle = parts.length > 2 ? parts.slice(1, parts.length - 1).join(' ') : ''
+        const phoneParts = parsePhone(passenger.phone)
 
         setForm({
           firstName: first,
           middleName: middle,
           lastName: last,
           email: passenger.email || '',
-          phoneCountry: '', // Would need to parse complex phone string if it was structured, but for now just put nothing if no structure
-          phoneArea: '',
-          phoneNumber: passenger.phone || '',
+          phoneCountry: phoneParts.country,
+          phoneArea: phoneParts.area,
+          phoneNumber: phoneParts.number,
           isPrimary: passenger.isPrimary || false,
         })
       } else {

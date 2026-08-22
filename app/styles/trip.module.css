@@ -510,6 +510,12 @@
     padding-left: 18px;
     padding-right: 18px;
   }
+  .tripTitle {
+    font-size: 19px;
+  }
+  .tab {
+    font-size: 13px;
+  }
 }
 
 /* =========================================================
@@ -522,9 +528,25 @@
   flex-direction: column;
 }
 .segBlock {
+  position: relative;
   margin-bottom: 40px;
   scroll-margin-top: 24px;
   transition: box-shadow 0.3s ease;
+}
+/* Connector line only between two consecutive cards — never above the
+   first card or below the last one, so it can't poke out past the
+   ends of the timeline. Lives in each block's own margin-bottom gap. */
+.segList > .segBlock:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -40px;
+  transform: translateX(-50%);
+  width: 1.5px;
+  height: 40px;
+  background: var(--border);
+  opacity: 0.5;
+  z-index: 0;
 }
 .segBlockFlash .ticketCard {
   box-shadow: 0 0 0 3px var(--accent), var(--shadow-card);
@@ -541,7 +563,21 @@
   color: var(--muted);
   margin-left: 45px;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
   padding: 1px 0 13px;
+}
+/* Mask the vertical timeline connector line individually behind each
+   piece of content — not as one full-width bar across the whole flex
+   row (which used to paint a blank dark rectangle over the empty
+   space between the "LAST CHECKED" label and the Report Delay button). */
+.segMetaRow > span {
+  position: relative;
+  z-index: 1;
+  background: var(--card);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 4px;
 }
 .segMetaRow svg {
   vertical-align: -2px;
@@ -556,6 +592,8 @@
   background: none;
   border: none;
   padding: 0;
+  position: relative;
+  z-index: 1;
 }
 .checkStatusBtn:disabled {
   opacity: 0.6;
@@ -576,6 +614,16 @@
 }
 .bellDot:hover {
   color: var(--accent);
+}
+.segUnreadDot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--shell-danger, #e5484d);
+  border: 1.5px solid var(--card, #0d0f12);
 }
 .smallBtn {
   border: 1.5px solid var(--border);
@@ -609,6 +657,8 @@
   margin: 0 0 16px 31px;
   font-size: 13px;
   color: var(--ink);
+  position: relative;
+  z-index: 1;
 }
 .replyNote p {
   margin: 0;
@@ -707,6 +757,7 @@
   flex-wrap: wrap;
 }
 .updatesSent {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -845,6 +896,8 @@
   align-items: center;
   gap: 12px;
   margin-top: 20px;
+  position: relative;
+  z-index: 1;
 }
 .manageBtn {
   border: 1.5px solid transparent;
@@ -1084,6 +1137,10 @@
   .ticketMain {
     padding: 18px 18px 20px;
   }
+  .ticketEndpoint .code,
+  .ticketEndpoint .time {
+    font-size: 14px;
+  }
 }
 
 /* =========================================================
@@ -1178,6 +1235,29 @@
   justify-content: space-between;
   align-items: flex-start;
   position: relative;
+}
+/* Fewer than ~4 stops: don't stretch them edge-to-edge across the whole
+   strip width — center them with a fixed, comfortable gap instead so two
+   or three segments don't read as oddly spaced-out. */
+.segIconsSparse {
+  justify-content: center;
+}
+.segIconsSparse::before {
+  /* Full-bleed connector only makes sense once space-between has actually
+     stretched the icons to the strip's edges. In sparse/centered mode the
+     per-gap connector elements below draw the line instead. */
+  display: none;
+}
+.segIconConnector {
+  flex: 1 1 auto;
+  min-width: 28px;
+  max-width: 72px;
+  height: 1px;
+  background: var(--border);
+  align-self: flex-start;
+  margin-top: 25px;
+  position: relative;
+  z-index: 0;
 }
 .segIcons::before {
   content: '';
@@ -1280,6 +1360,9 @@
   .newSegBtn {
     align-self: center;
   }
+  .overviewMsg {
+    gap: 10px;
+  }
   .segIcons {
     justify-content: center;
     gap: 36px;
@@ -1287,6 +1370,21 @@
   .segIcons::before {
     left: 24px;
     right: 24px;
+  }
+  .segIconsSparse {
+    gap: 0;
+  }
+  .segStrip {
+    margin-top: 32px;
+  }
+  .segIconTime {
+    font-size: 12px;
+  }
+  .overviewMsg p {
+    font-size: 13px;
+  }
+  .updatesSent {
+    font-size: 9.5px;
   }
 }
 

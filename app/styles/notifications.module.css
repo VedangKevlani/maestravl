@@ -253,4 +253,7 @@
     align-items: center;
     margin-left: 48px;
   }
+  .title {
+    font-size: 24px;
+  }
 }

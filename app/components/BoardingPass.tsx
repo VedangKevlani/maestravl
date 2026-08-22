@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowRight, ChevronDown, Bell, GripVertical, Eye, EyeOff } from 'lucide-react'
 import DelayModal from './DelayModal'
 import SegmentUpdatesModal from './SegmentUpdatesModal'
+import { useSegmentUnreadUpdates } from './useSegmentUnreadUpdates'
 import ConfidenceBadge from './ConfidenceBadge'
 import SegmentModal from './SegmentModal'
 import { type PassengerDTO, type SegmentDTO } from './types'
@@ -179,6 +180,7 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   const [reportNewTime, setReportNewTime] = useState(() => toLocalInputValue(segment.departureTime))
   const [reporting, setReporting] = useState(false)
   const [reportResult, setReportResult] = useState<ReportResult | null>(null)
+  const { hasUnseen: hasUnseenUpdates, markSeen: markUpdatesSeen } = useSegmentUnreadUpdates(tripId, segment.id)
   const [messagesOpen, setMessagesOpen] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
   const [resolveNote, setResolveNote] = useState('')
@@ -323,10 +325,11 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
         <div className={styles.metaSpacer} />
         <div
           className={styles.bellDot}
-          onClick={() => setUpdatesModalOpen(true)}
+          onClick={() => { setUpdatesModalOpen(true); markUpdatesSeen() }}
           data-tip="View all Maestro updates and alerts for this segment"
         >
           <Bell size={13} />
+          {hasUnseenUpdates && <span className={styles.segUnreadDot} aria-hidden="true" />}
         </div>
         <button
           type="button"
@@ -362,10 +365,11 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span
                   className={styles.updatesSent}
-                  onClick={() => setUpdatesModalOpen(true)}
+                  onClick={() => { setUpdatesModalOpen(true); markUpdatesSeen() }}
                   data-tip="View all Maestro updates and alerts for this segment"
                 >
                   <Bell size={11} />
+                  {hasUnseenUpdates && <span className={styles.segUnreadDot} aria-hidden="true" />}
                   {linkedPassengers.length === 0
                     ? 'No passengers notified'
                     : `Updates sent to: ${linkedPassengers.map((p) => p.name).join(', ')}`}
@@ -595,8 +599,8 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
               </div>
             ))}
 
-            <div className={styles.ticketFooter}>
-              {uberHref && (
+            {uberHref && (
+              <div className={styles.ticketFooter}>
                 <a
                   href={uberHref}
                   target="_blank"
@@ -605,13 +609,13 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                 >
                   Get an Uber there →
                 </a>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '18px' }}>
         <button
           type="button"
           onClick={() => setEditModalOpen(true)}
