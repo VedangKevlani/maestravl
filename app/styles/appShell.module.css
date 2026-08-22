@@ -1,0 +1,186 @@
+/* =========================================================
+   App shell header — ported from new-frontend-src/common.css
+   (the shared chrome used across dashboard/trip/etc. in the
+   static prototype). Scoped as a CSS module so it only affects
+   the (app) route group's header and never leaks into the
+   landing page or other routes.
+
+   Design-token custom properties (--shell-*) live in
+   app/globals.css, not here — css-loader's "pure" mode rejects
+   a module file whose top-level selectors are entirely global.
+   ========================================================= */
+
+.page {
+  background: var(--shell-page);
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 28px 34px 22px;
+}
+
+.brandWrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.brandImg {
+  height: 26px;
+  width: auto;
+  display: block;
+}
+
+.brand {
+  font-family: 'Bricolage Grotesque', 'Manrope', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-size: 17px;
+  color: #eef0f3;
+  white-space: nowrap;
+}
+
+.icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tourBtn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--shell-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border-radius: var(--shell-radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+.tourBtn:hover {
+  background: var(--shell-hover);
+  color: var(--shell-ink);
+}
+
+.iconBtn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--shell-ink);
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  transition: background 0.15s ease, transform 0.1s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+.iconBtn:hover {
+  background: var(--shell-hover);
+}
+.iconBtn:active {
+  transform: scale(0.92);
+}
+
+.unreadDot {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--shell-danger);
+  border: 1.5px solid var(--shell-page);
+}
+
+.greet {
+  font-size: 13.5px;
+  color: var(--shell-muted);
+  font-weight: 500;
+  margin-right: 2px;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.greetName {
+  color: var(--shell-accent, #52b788);
+  font-weight: 600;
+}
+
+.menuWrap {
+  position: relative;
+}
+
+.menu {
+  display: none;
+  position: absolute;
+  top: 38px;
+  right: 0;
+  min-width: 180px;
+  background: var(--shell-card);
+  border: 1.5px solid var(--shell-border);
+  border-radius: var(--shell-radius-md);
+  box-shadow: var(--shell-shadow-pop);
+  padding: 6px;
+  z-index: 50;
+}
+.menu.open {
+  display: block;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--shell-radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--shell-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  text-align: left;
+  text-decoration: none;
+  font-family: inherit;
+}
+.menuItem:hover {
+  background: var(--shell-hover);
+}
+.menuItemDanger {
+  color: var(--shell-danger);
+}
+
+.main {
+  padding: 40px 34px 64px;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+@media (max-width: 700px) {
+  .header {
+    padding: 18px 18px 16px;
+  }
+  .brand {
+    display: none;
+  }
+  .main {
+    padding: 24px 18px 40px;
+  }
+}

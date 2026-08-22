@@ -1,0 +1,1391 @@
+/* =========================================================
+   TRIP.MODULE.CSS — ported directly from
+   new-frontend-src/trip/trip.css so the trip detail page
+   matches the static reference design. Requires the design
+   tokens in app/globals.css (ported from common.css) to
+   already be loaded.
+
+   NOTE: this file currently covers the top of the page (title
+   row, status pill, pill row, passengers section, home-tz
+   badge, mini dropzone, tabs). The ticket/segment-card and
+   trip-updates-feed styling further down trip.css has not been
+   ported yet — see UI_PAGES.md "Porting status".
+   ========================================================= */
+
+.tripWrap {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.backLink {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: 16px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.backLink:hover {
+  color: var(--ink);
+}
+.backLink svg {
+  flex: none;
+}
+
+.tripTitleRow {
+  padding: 18px 34px 0;
+  margin-bottom: 36px;
+}
+.tripTitleHead {
+  display: flex;
+  flex-direction: column;
+}
+.tripTitleLine {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.tripTitleActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.tripStatusPill {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--green-bg);
+  color: var(--green);
+  white-space: nowrap;
+}
+.tripStatusPillUpcoming {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.tripStatusPillPast {
+  background: var(--disabled-bg);
+  color: var(--disabled-ink);
+}
+
+.activityLogLink {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.activityLogLink:hover {
+  color: var(--ink);
+}
+
+.tripTitle {
+  font-family: 'Bricolage Grotesque', 'Manrope', sans-serif;
+  font-size: 22px;
+  color: var(--accent);
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.titleEditBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--faint);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.titleEditBtn:hover {
+  color: var(--accent);
+  background: var(--hover);
+}
+
+.titleEditForm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titleInput {
+  font-family: 'Bricolage Grotesque', 'Manrope', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  outline: none;
+}
+.titleInput:focus {
+  border-color: var(--accent);
+}
+
+.tripTitleDot {
+  color: var(--faint);
+  font-size: 16px;
+  font-weight: 600;
+}
+.tripSub {
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+/* ---------- TRIP-LEVEL MENU (reuses the dashboard's popover shape) ---------- */
+.tripCardMenu {
+  position: relative;
+  flex: none;
+}
+.tripCardMenuBtn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--faint);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.tripCardMenuBtn:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.tripCardMenuPop {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  z-index: 20;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  min-width: 150px;
+  padding: 6px;
+  overflow: hidden;
+}
+.tripCardMenuPop button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 9px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tripCardMenuPop button:hover {
+  background: var(--danger-bg);
+}
+.tripCardMenuPop button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- ALERT BANNER ---------- */
+.alertBanner {
+  margin: 8px 30px 12px;
+  border: 1.5px solid rgba(224, 170, 78, 0.7);
+  background: #3d3119;
+  border-radius: 8px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.45;
+  cursor: pointer;
+  text-decoration: none;
+}
+.alertBanner p {
+  margin: 0;
+  font-weight: 600;
+  flex: 1;
+}
+.alertBannerDot {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--amber);
+}
+
+/* ---------- PILL ROW (segments / monitoring / passengers / home tz) ---------- */
+.pillRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 30px 48px;
+  flex-wrap: wrap;
+}
+.pill {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #21232b;
+  box-shadow: var(--shadow-card);
+  white-space: nowrap;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.12s ease;
+}
+.pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--faint);
+  box-shadow: 0 6px 20px rgba(20, 25, 35, 0.09);
+}
+.pill svg {
+  color: var(--accent);
+  flex: none;
+}
+.pillNum {
+  color: var(--ink);
+  font-weight: 800;
+}
+.pillSpacer {
+  margin-left: auto;
+}
+
+/* ---------- PASSENGERS SECTION ---------- */
+.section {
+  padding: 0 30px 24px;
+}
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0 0 12px;
+  color: var(--black);
+}
+.sectionHr {
+  border: none;
+  border-top: 1.5px solid var(--border-soft);
+  margin: 0 0 12px;
+}
+
+.passengerRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.passengerPill {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 7px 12px 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  cursor: default;
+}
+.passengerPill svg {
+  color: var(--faint);
+}
+.passengerPillEdit {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--faint);
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+.passengerPillEdit:hover {
+  color: var(--ink);
+}
+.pillBtn {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--card);
+  cursor: pointer;
+}
+.pillBtn:hover {
+  background: var(--hover);
+}
+
+.inlineForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inlineInput {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--card);
+  font-family: inherit;
+  outline: none;
+}
+.inlineInput:focus {
+  border-color: var(--accent);
+}
+.inlineFormAction {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.inlineFormAction:hover {
+  color: var(--ink);
+}
+.inlineFormCancel {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--faint);
+}
+.inlineFormCancel:hover {
+  color: var(--muted);
+}
+
+/* ---------- HOME TIMEZONE BADGE ---------- */
+.homeTzBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: #21232b;
+  box-shadow: var(--shadow-card);
+  white-space: nowrap;
+}
+.homeTzBadge svg {
+  color: var(--accent);
+}
+.homeTzEdit {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 11px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.homeTzEdit:hover {
+  color: var(--ink);
+}
+.homeTzBadgeSet {
+  cursor: pointer;
+  border-style: dashed;
+  color: var(--muted);
+}
+.homeTzBadgeSet:hover {
+  color: var(--ink);
+  border-color: var(--faint);
+}
+
+/* ---------- ADD VIA FILE (mini dropzone) ---------- */
+.miniDropzone {
+  margin: 0 30px 40px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.miniDropzone svg {
+  color: var(--faint);
+  flex: none;
+}
+.miniDropzone:hover,
+.miniDropzoneDragover {
+  border-color: var(--accent);
+  background: var(--accent-tint-bg);
+  color: var(--ink);
+}
+.miniDropzone b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- TABS (Timeline / Trip Updates) ---------- */
+.tabs {
+  display: flex;
+  gap: 28px;
+  padding: 0 34px;
+  margin-bottom: 36px;
+}
+.tab {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--faint);
+  padding: 0 0 12px;
+  cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+.tabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.panel {
+  padding: 0 34px 40px;
+}
+
+@media (max-width: 700px) {
+  .tripTitleRow,
+  .pillRow,
+  .section,
+  .panel {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .alertBanner,
+  .miniDropzone {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+  .tabs {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}
+
+/* =========================================================
+   SEGMENT TICKET CARDS (timeline) — ported from trip.css's
+   .seg-block / .ticket-card / .ticket-* rules.
+   ========================================================= */
+.segList {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.segBlock {
+  margin-bottom: 40px;
+  scroll-margin-top: 24px;
+  transition: box-shadow 0.3s ease;
+}
+.segBlockFlash .ticketCard {
+  box-shadow: 0 0 0 3px var(--accent), var(--shadow-card);
+}
+.segBlockDragging {
+  opacity: 0.4;
+}
+
+.segMetaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 31px;
+  flex-wrap: wrap;
+  padding: 1px 0 13px;
+}
+.segMetaRow svg {
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+.checkStatusBtn {
+  color: var(--status-blue);
+  font-weight: 500;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.checkStatusBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.metaSpacer {
+  flex: 1;
+}
+.bellDot {
+  position: relative;
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+}
+.bellDot:hover {
+  color: var(--accent);
+}
+.smallBtn {
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.smallBtn:hover {
+  background: var(--hover-2);
+}
+.smallBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.replyNote {
+  border: 1.5px solid rgba(224, 170, 78, 0.7);
+  background: #3d3119;
+  border-radius: 8px;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px 31px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.replyNote p {
+  margin: 0;
+  flex: 1;
+  color: var(--ink);
+  line-height: 1.45;
+  font-weight: 600;
+}
+.replyNoteDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--amber);
+  flex: none;
+}
+
+.segRow {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.segDrag {
+  flex: none;
+  color: var(--faint);
+  font-size: 13px;
+  cursor: grab;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+  background: none;
+  border: none;
+}
+.segDrag:active {
+  cursor: grabbing;
+}
+
+.ticketCard {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  z-index: 1;
+  background: #21232b;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.ticketCard:hover {
+  box-shadow: 0 4px 16px rgba(20, 25, 35, 0.08);
+  transform: translateY(-1px);
+}
+
+.ticketSide {
+  flex: none;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 26px 8px;
+  border-right: 1.5px dashed var(--border);
+}
+.ticketIcon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex: none;
+  background: var(--accent);
+  color: #0f1218;
+}
+.segTypeLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  text-align: center;
+}
+
+.ticketMain {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 28px 26px;
+}
+.ticketHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.updatesSent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  background: none;
+}
+.confidenceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.confidenceHigh {
+  background: var(--green-bg);
+  color: var(--green);
+}
+.confidenceMedium {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.confidenceLow {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.ticketExpand {
+  margin-left: auto;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px;
+  background: none;
+  border: none;
+  display: flex;
+  transition: transform 0.15s ease;
+}
+.ticketExpandOpen {
+  transform: rotate(180deg);
+}
+
+.ticketFlightline {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.ticketFlightline .carrier {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.ticketDate {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  flex: none;
+}
+
+.ticketRoute {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.ticketEndpoint {
+  min-width: 0;
+  flex: 1;
+}
+.ticketEndpoint .code {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.ticketEndpoint .place {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.ticketEndpoint .time {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--accent);
+  margin-top: 8px;
+}
+.ticketEndpoint .tz {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.ticketEndpointRight {
+  text-align: right;
+}
+.ticketArrow {
+  color: var(--amber);
+  font-size: 22px;
+  flex: none;
+}
+
+.ticketExtra {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1.5px solid var(--border-soft);
+}
+.ticketExtra > div .label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+.ticketExtra > div .val {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ticketFooter {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+.manageBtn {
+  border: 1.5px solid transparent;
+  background: var(--accent);
+  color: #0f1218;
+  border-radius: var(--radius-pill);
+  padding: 4px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(63, 107, 57, 0.25);
+}
+.manageBtn:hover {
+  filter: brightness(1.07);
+}
+.manageBtnSecondary {
+  border: 1.5px solid var(--border);
+  background: none;
+  color: var(--muted);
+  border-radius: var(--radius-pill);
+  padding: 4px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.manageBtnSecondary:hover {
+  color: var(--ink);
+  border-color: var(--faint);
+}
+
+/* ---------- run status ribbon / manage panel (inside ticketMain) ---------- */
+.runRibbon {
+  margin-top: 18px;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: var(--hover);
+}
+.runRibbon p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.runRibbonNote {
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 6px;
+}
+.managePanel {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1.5px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.manageActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.linkBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0;
+}
+.linkBtn:hover {
+  color: var(--ink);
+}
+.linkBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.notifiesNote {
+  font-size: 11px;
+  color: var(--faint);
+}
+.reportPanel {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reportPanel p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.reportRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reportInput {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--card);
+  font-family: inherit;
+}
+
+/* ---------- TRIP UPDATES PANEL ---------- */
+.updateDate {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--faint);
+  letter-spacing: 0.05em;
+  margin: 28px 0 16px;
+  text-transform: uppercase;
+}
+.updateDate:first-child {
+  margin-top: 0;
+}
+.updateItem {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  background: var(--card);
+}
+.updateItem .uIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex: none;
+}
+.updateItem .uText {
+  flex: 1;
+  min-width: 0;
+}
+.updateItem .uTime {
+  font-size: 10.5px;
+  color: var(--faint);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.updateItem .uMsg {
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.seeMore {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--card);
+  cursor: pointer;
+  flex: none;
+  color: var(--ink);
+}
+.seeMore:hover {
+  background: var(--hover-2);
+}
+.updatesFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.updatesFilterLabel {
+  font-size: 11px;
+  color: var(--faint);
+}
+.updatesFilterClear {
+  border: none;
+  background: none;
+  color: var(--faint);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+.updatesFilterClear:hover {
+  color: var(--ink);
+}
+.emptyState {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.emptyState svg {
+  color: var(--faint);
+  margin-bottom: 0;
+}
+.emptyState p {
+  font-size: 13px;
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .ticketExtra {
+    row-gap: 14px;
+  }
+  .ticketExtra > div {
+    flex: 1 1 40%;
+  }
+  .ticketCard {
+    flex-direction: column;
+  }
+  .ticketSide {
+    flex-direction: row;
+    width: auto;
+    border-right: none;
+    border-bottom: 1.5px dashed var(--border);
+    padding: 12px 16px;
+  }
+  .ticketMain {
+    padding: 18px 18px 20px;
+  }
+}
+
+/* =========================================================
+   SEGMENT OVERVIEW CARD (status message + horizontal segment
+   strip) — ported from trip.css's .overview-card / .seg-strip
+   / .seg-icon-* rules.
+   ========================================================= */
+.overviewCard {
+  margin: 40px 30px 40px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 30px 24px 32px;
+  background: #21232b;
+  box-shadow: var(--shadow-card);
+}
+.overviewTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.overviewMsg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 520px;
+}
+.overviewMsg p {
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.4;
+}
+.statusDot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--amber);
+  flex: none;
+}
+.statusDotOk {
+  border-color: var(--accent);
+}
+.newSegBtn {
+  border: 1.5px solid transparent;
+  background: var(--accent);
+  color: #0f1218;
+  border-radius: var(--radius-pill);
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(63, 107, 57, 0.25);
+  flex: none;
+}
+.newSegBtn:hover {
+  filter: brightness(1.07);
+}
+
+.segStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 45px;
+}
+.segArrow {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 16px;
+  cursor: pointer;
+  width: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.segArrow:hover:not(:disabled) {
+  color: var(--ink);
+}
+.segArrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.segIcons {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  position: relative;
+}
+.segIcons::before {
+  content: '';
+  position: absolute;
+  top: 25px;
+  left: 30px;
+  right: 30px;
+  height: 1px;
+  background: var(--border);
+  z-index: 0;
+}
+.segIconItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+  width: 70px;
+}
+.segIconCircle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  font-size: 19px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.12s ease;
+  color: var(--ink);
+}
+.segIconCircle:hover {
+  background: var(--hover);
+}
+.segIconCircle:active {
+  transform: scale(0.94);
+}
+.segIconCheck {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0f1218;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.segIconCheckX {
+  background: var(--amber);
+  color: #0f1218;
+}
+.segIconTime {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.segIconTimeAttention {
+  color: var(--amber);
+}
+.segStripEmpty {
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--muted);
+}
+.segStripEmpty svg {
+  color: var(--faint);
+  margin-bottom: 0;
+}
+.segStripEmpty p {
+  font-size: 12px;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .overviewCard {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+}
+
+@media (max-width: 600px) {
+  .overviewTop {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .newSegBtn {
+    align-self: center;
+  }
+  .segIcons {
+    justify-content: center;
+    gap: 36px;
+  }
+  .segIcons::before {
+    left: 24px;
+    right: 24px;
+  }
+}
+
+/* ---------- VOICE WIDGET ---------- */
+.voiceWidget {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.voiceWidgetBubble {
+  max-width: min(280px, calc(100vw - 68px));
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-pop);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.youSaidLabel {
+  font-size: 10px;
+  color: var(--faint);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.youSaidText {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.replyText {
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.voiceWidgetBtn {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--amber);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease;
+  touch-action: none;
+  user-select: none;
+}
+
+.voiceWidgetBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.voiceWidgetBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.voiceWidgetBtnListening {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.voiceWidgetLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--faint);
+}
+
+/* ---------- PASSENGER PILL EXTRA ---------- */
+.passengerCol {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.primaryLabel {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-left: 2px;
+}
+

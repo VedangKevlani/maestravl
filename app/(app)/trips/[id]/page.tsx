@@ -1,13 +1,13 @@
+import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { isTerminalRunStatus } from '@/lib/constants'
-import Timeline from '../../../components/Timeline'
-import TransportTypeForm from '../../../components/TransportTypeForm'
+import TripActivityTabs, { type ActivityItemDTO } from '../../../components/TripActivityTabs'
 import UploadDropzone from '../../../components/UploadDropzone'
 import TripHeader from '../../../components/TripHeader'
+import TripAddSegmentClient from '../../../components/TripAddSegmentClient'
 import VoiceWidget from '../../../components/VoiceWidget'
-import HomeTimezoneBadge from '../../../components/HomeTimezoneBadge'
 import type { ActiveRunDTO, SegmentDTO, TripDTO } from '../../../components/types'
 
 export default async function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,7 +15,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const session = await auth()
   const userId = session!.user.id
 
-  const [trip, user] = await Promise.all([
+  const [trip, user, disruptions] = await Promise.all([
     prisma.trip.findFirst({
       where: { id, userId },
       include: {
@@ -46,6 +46,21 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       },
     }),
     prisma.user.findUnique({ where: { id: userId }, select: { homeTimezone: true } }),
+    // Full activity history across every segment, for the "Trip Updates" tab.
+    // Kept separate from the per-segment buffer above (which is capped at 3
+    // for the boarding pass) so this tab isn't limited by that cap.
+    prisma.disruption.findMany({
+      where: { tripId: id },
+      orderBy: { detectedAt: 'desc' },
+      take: 50,
+      include: {
+        segment: { select: { identifier: true, provider: true, transportType: true } },
+        agentRuns: {
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, status: true, summary: true, createdAt: true },
+        },
+      },
+    }),
   ])
   if (!trip) notFound()
 
@@ -53,7 +68,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     id: trip.id,
     title: trip.title,
     status: trip.status,
-    passengers: trip.passengers.map((p) => ({ id: p.id, name: p.name, isPrimary: p.isPrimary, email: p.email, phone: p.phone })),
+    passengers: trip.passengers.map((p) => ({ id: p.id, name: p.name, isPrimary: p.isPrimary, email: p.email, phone: p.phone, emergencyContact: p.emergencyContact })),
     segments: trip.segments.map((s): SegmentDTO => {
       // Same "prefer the still-open run over the most recently resolved
       // one" rule the old TripRecoveryStatus.tsx banner used — reused here
@@ -110,27 +125,72 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     }),
   }
 
+  // Flatten disruptions + their agent runs into one feed, newest first —
+  // this is the data behind the "Trip Updates" tab. Each disruption is a
+  // detected status change; each agent run under it is a step the recovery
+  // agent took while working the disruption.
+  const activity: ActivityItemDTO[] = disruptions
+    .flatMap((d) => {
+      const segmentLabel = d.segment.identifier || d.segment.provider || d.segment.transportType
+      const items: ActivityItemDTO[] = [
+        {
+          id: d.id,
+          segmentId: d.segmentId,
+          segmentLabel,
+          detectedAt: d.detectedAt.toISOString(),
+          kind: 'status_change',
+          previousStatus: d.previousStatus,
+          newStatus: d.newStatus,
+        },
+      ]
+      for (const run of d.agentRuns) {
+        items.push({
+          id: run.id,
+          segmentId: d.segmentId,
+          segmentLabel,
+          detectedAt: run.createdAt.toISOString(),
+          kind: 'agent_update',
+          agentStatus: run.status,
+          summary: run.summary,
+        })
+      }
+      return items
+    })
+    .sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime())
+
+  // Segments actively being watched by the monitoring service — surfaced
+  // in TripHeader's "Monitoring N Segments" pill.
+
   return (
     <div>
-      <TripHeader trip={dto} />
+      <TripHeader trip={dto} homeTimezone={user?.homeTimezone ?? null} />
 
-      <div className="mt-3" data-tour="home-timezone">
-        <HomeTimezoneBadge initialHomeTimezone={user?.homeTimezone ?? null} />
+      <TripAddSegmentClient
+        segments={dto.segments}
+        passengers={dto.passengers}
+        tripId={dto.id}
+      />
+
+      <div data-tour="upload-more">
+        <UploadDropzone tripId={dto.id} variant="mini" />
       </div>
 
       <section className="mt-8">
-        <p className="text-label text-white/40 mb-3">timeline</p>
-        <Timeline tripId={dto.id} segments={dto.segments} passengers={dto.passengers} homeTimezone={user?.homeTimezone ?? null} />
-      </section>
-
-      <section className="mt-10" data-tour="add-segment-form">
-        <p className="text-label text-white/40 mb-3">add a segment</p>
-        <TransportTypeForm tripId={dto.id} />
-      </section>
-
-      <section className="mt-10 mb-10" data-tour="upload-more">
-        <p className="text-label text-white/40 mb-3">import another document</p>
-        <UploadDropzone tripId={dto.id} />
+        {/* TripActivityTabs reads ?tab=/&segment= via useSearchParams (the
+            BoardingPass "View full history" link lands here) — wrapped in
+            Suspense to match the pattern used on the auth pages, so this
+            doesn't force a client-side bailout during the build's static
+            analysis of this route. */}
+        <Suspense fallback={null}>
+          <TripActivityTabs
+            tripId={dto.id}
+            tripTitle={dto.title}
+            segments={dto.segments}
+            passengers={dto.passengers}
+            homeTimezone={user?.homeTimezone ?? null}
+            activity={activity}
+          />
+        </Suspense>
       </section>
 
       <VoiceWidget tripId={dto.id} />

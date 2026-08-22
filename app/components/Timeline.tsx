@@ -69,7 +69,7 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-3">
             {items.map((segment, i) => (
-              <BoardingPass key={segment.id} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
+              <BoardingPass key={segment.id} tripId={tripId} segment={segment} passengers={passengers} nextSegment={items[i + 1] ?? null} homeTimezone={homeTimezone} />
             ))}
           </div>
         </SortableContext>

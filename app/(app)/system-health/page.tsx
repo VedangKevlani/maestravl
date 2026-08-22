@@ -1,6 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import {
+  ArrowLeft, Mail, MailCheck, Clock, Plane, TrainFront, Car, Search, MessageSquare, Phone, Mic, Volume2, type LucideIcon,
+} from 'lucide-react'
+import styles from '../../styles/systemStatus.module.css'
 
 interface Integration {
   id: string
@@ -11,20 +15,66 @@ interface Integration {
   notImplemented?: boolean
 }
 
-function StatusPill({ integration }: { integration: Integration }) {
+// One glyph per integration id — mirrors the static prototype's circular
+// icon badge on each sys-row. Falls back to a generic dot if a new
+// integration id shows up here before this map is updated.
+const INTEGRATION_ICONS: Record<string, LucideIcon> = {
+  'email-outbound': Mail,
+  'email-inbound': MailCheck,
+  'monitoring-cron': Clock,
+  'flight-monitoring': Plane,
+  'train-bus-monitoring': TrainFront,
+  'car-taxi-monitoring': Car,
+  'minimax-search': Search,
+  'sms-notifications': MessageSquare,
+  'whatsapp-notifications': Phone,
+  'voice-assistant': Mic,
+  'voice-tts': Volume2,
+}
+
+// Groups + group order ported from system-status.js's SYSTEM_GROUPS —
+// the API returns a flat list (grouping isn't its job), so bucket it
+// here the same way the reference's static data was already grouped.
+const GROUP_ORDER = ['Notifications', 'Monitoring', 'Assistant'] as const
+const GROUP_OF: Record<string, (typeof GROUP_ORDER)[number]> = {
+  'email-outbound': 'Notifications',
+  'email-inbound': 'Notifications',
+  'sms-notifications': 'Notifications',
+  'whatsapp-notifications': 'Notifications',
+  'monitoring-cron': 'Monitoring',
+  'flight-monitoring': 'Monitoring',
+  'train-bus-monitoring': 'Monitoring',
+  'car-taxi-monitoring': 'Monitoring',
+  'minimax-search': 'Assistant',
+  'voice-assistant': 'Assistant',
+  'voice-tts': 'Assistant',
+}
+
+function IntegrationIcon({ id, iconClass }: { id: string; iconClass: string }) {
+  const Icon = INTEGRATION_ICONS[id]
+  return (
+    <div className={`${styles.icon} ${iconClass}`} aria-hidden="true">
+      {Icon ? <Icon size={14} strokeWidth={2} /> : <span style={{ fontSize: '0.6rem' }}>•</span>}
+    </div>
+  )
+}
+
+// Pill copy + icon tone + hover tip ported verbatim from system-status.js's
+// SYSTEM_PILL map.
+function statusMeta(integration: Integration): { pillClass: string; iconClass: string; text: string; tip: string } {
   if (integration.notImplemented) {
-    return <span className="text-label px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>Not implemented</span>
+    return { pillClass: styles.pillNotImplemented, iconClass: styles.iconMuted, text: 'Not implemented', tip: "This is on the roadmap but hasn't been built yet." }
   }
   if (!integration.configured) {
-    return <span className="text-label px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>Not configured</span>
+    return { pillClass: styles.pillNotConfigured, iconClass: styles.iconMuted, text: 'Not configured', tip: "This feature hasn't been set up yet. It won't work until it's configured." }
   }
   if (integration.confirmed === true) {
-    return <span className="text-label px-2 py-0.5 rounded-full" style={{ background: 'rgba(82,183,136,0.12)', color: '#52b788', fontSize: '0.6rem' }}>Confirmed working</span>
+    return { pillClass: styles.pillConfirmed, iconClass: styles.iconConfirmed, text: 'Confirmed working', tip: 'Verified from real activity — this feature has actually been used and worked.' }
   }
   if (integration.confirmed === false) {
-    return <span className="text-label px-2 py-0.5 rounded-full" style={{ background: 'rgba(212,168,83,0.15)', color: '#d4a853', fontSize: '0.6rem' }}>Configured, unconfirmed</span>
+    return { pillClass: styles.pillUnconfirmed, iconClass: styles.iconUnconfirmed, text: 'Configured, unconfirmed', tip: "Set up, but something is blocking confirmation — check the evidence note below for what's needed." }
   }
-  return <span className="text-label px-2 py-0.5 rounded-full" style={{ background: 'rgba(74,160,216,0.12)', color: '#4aa0d8', fontSize: '0.6rem' }}>Configured</span>
+  return { pillClass: styles.pillConfigured, iconClass: styles.icon, text: 'Configured', tip: "The setting is turned on, but there's no real usage yet to confirm it's working end-to-end." }
 }
 
 export default function SystemHealthPage() {
@@ -41,40 +91,48 @@ export default function SystemHealthPage() {
       .catch(() => setError(true))
   }, [])
 
+  const groups = GROUP_ORDER.map((group) => ({
+    group,
+    items: (integrations ?? []).filter((i) => GROUP_OF[i.id] === group),
+  })).filter((g) => g.items.length > 0)
+
   return (
-    <div className="max-w-2xl">
-      <Link href="/dashboard" className="text-label text-white/40 hover:text-white/80" style={{ fontSize: '0.65rem' }}>
-        ← Back
+    <div className={styles.wrap}>
+      <Link href="/dashboard" className={styles.backLink}>
+        <ArrowLeft size={13} /> Dashboard
       </Link>
-      <h1 className="text-editorial text-white font-medium mt-4 mb-1" style={{ fontSize: '1.4rem' }}>System status</h1>
-      <p className="text-editorial text-white/50 mb-8" style={{ fontSize: '0.85rem' }}>
-        What&apos;s actually configured and what&apos;s actually been confirmed working — from real evidence in the
+
+      <h1 className={styles.title}>System status</h1>
+      <hr className="border-0" style={{ borderTop: '1.5px solid var(--border-soft)', marginTop: '16px' }} />
+      <p className={styles.subtitle}>
+        What&rsquo;s actually configured and what&rsquo;s actually been confirmed working — from real evidence in the
         database, not just whether an environment variable happens to be set.
       </p>
 
-      {error && (
-        <p className="text-editorial text-white/50" style={{ fontSize: '0.85rem' }}>Couldn&apos;t load system status.</p>
-      )}
+      {error && <p className={styles.evidence}>Couldn&rsquo;t load system status.</p>}
+      {!error && integrations === null && <p className={styles.evidence}>Loading…</p>}
 
-      {!error && integrations === null && (
-        <p className="text-editorial text-white/40" style={{ fontSize: '0.85rem' }}>Loading…</p>
-      )}
-
-      {integrations && (
-        <div className="flex flex-col divide-y divide-white/8">
-          {integrations.map((integration) => (
-            <div key={integration.id} className="py-4">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <span className="text-editorial text-white" style={{ fontSize: '0.9rem' }}>{integration.label}</span>
-                <StatusPill integration={integration} />
-              </div>
-              {integration.evidence && (
-                <p className="text-editorial text-white/40 mt-1.5" style={{ fontSize: '0.75rem' }}>{integration.evidence}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {integrations &&
+        groups.map(({ group, items }) => (
+          <div key={group}>
+            <div className={styles.groupLabel}>{group}</div>
+            {items.map((integration) => {
+              const meta = statusMeta(integration)
+              return (
+                <div key={integration.id} className={styles.row}>
+                  <IntegrationIcon id={integration.id} iconClass={meta.iconClass} />
+                  <div className={styles.text}>
+                    <div className={styles.name}>{integration.label}</div>
+                    {integration.evidence && <div className={styles.evidence}>{integration.evidence}</div>}
+                  </div>
+                  <span className={`${styles.pill} ${meta.pillClass}`} title={meta.tip}>
+                    {meta.text}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ))}
     </div>
   )
 }

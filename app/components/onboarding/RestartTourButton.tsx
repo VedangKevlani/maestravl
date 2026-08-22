@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation'
 import { useOnboarding } from './OnboardingProvider'
 
 /** Replay entry point for anyone who dismissed the tour and wants it back — lives in the header next to Sign out. */
-export default function RestartTourButton() {
+export default function RestartTourButton({ className }: { className?: string }) {
   const router = useRouter()
   const { restart } = useOnboarding()
 
@@ -16,7 +16,12 @@ export default function RestartTourButton() {
   }
 
   return (
-    <button type="button" onClick={handleClick} className="text-label text-white/40 hover:text-white/80 transition-colors whitespace-nowrap" style={{ fontSize: '0.65rem' }}>
+    <button
+      type="button"
+      onClick={handleClick}
+      className={className ?? 'text-label text-white/40 hover:text-white/80 transition-colors whitespace-nowrap'}
+      style={className ? undefined : { fontSize: '0.65rem' }}
+    >
       Take the tour
     </button>
   )

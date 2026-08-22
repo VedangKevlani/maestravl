@@ -5,8 +5,9 @@ import { friendlyZoneLabel } from '@/lib/dateFormat'
 // Lets the passenger set (or correct) the "home" timezone the world clock
 // (SegmentWorldClock.tsx) compares every segment against. Never guessed
 // server-side — auto-suggested from the browser's own zone on click, same
-// "Use mine" convention already used by the segment add/edit forms
-// (TransportTypeForm.tsx/SegmentEditForm.tsx), and always editable after.
+// "Use mine" convention already used by the segment add/edit form
+// (TransportTypeForm.tsx, shared by both flows via SegmentModal.tsx),
+// and always editable after.
 export default function HomeTimezoneBadge({ initialHomeTimezone }: { initialHomeTimezone: string | null }) {
   const [homeTimezone, setHomeTimezone] = useState(initialHomeTimezone)
   const [editing, setEditing] = useState(false)

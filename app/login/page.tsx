@@ -3,7 +3,8 @@ import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import MaestravlMark from '../components/MaestravlMark'
+import AuthShell from '../components/auth/AuthShell'
+import styles from '../styles/auth.module.css'
 
 function LoginForm() {
   const router = useRouter()
@@ -28,53 +29,46 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-sm flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="email" className="text-label text-white/50">Email</label>
-        <input
-          id="email" type="email" required autoComplete="email" value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <label htmlFor="password" className="text-label text-white/50">Password</label>
-          <Link href="/forgot-password" className="text-label text-white/40 hover:text-white/70" style={{ fontSize: '0.7rem' }}>
-            Forgot password?
-          </Link>
+    <>
+      <form onSubmit={onSubmit} className={styles.form} noValidate>
+        <div className={styles.field}>
+          <label htmlFor="email" className={styles.fieldLabel}>Email</label>
+          <input
+            id="email" type="email" required autoComplete="email" placeholder="you@example.com"
+            value={email} onChange={(e) => setEmail(e.target.value)}
+            className={styles.input}
+          />
         </div>
-        <input
-          id="password" type="password" required autoComplete="current-password" value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
-        />
-      </div>
-      {error && <p role="alert" className="text-editorial text-red-400" style={{ fontSize: '0.85rem' }}>{error}</p>}
-      <button
-        type="submit" disabled={loading}
-        className="mt-2 px-6 py-3 rounded-full text-editorial font-medium disabled:opacity-50"
-        style={{ background: 'var(--warm-white)', color: 'var(--charcoal)' }}
-      >
-        {loading ? 'Signing in…' : 'Sign in'}
-      </button>
-      <p className="text-editorial text-white/40 text-center mt-2" style={{ fontSize: '0.85rem' }}>
-        No account? <Link href="/signup" className="text-white/70 underline">Sign up</Link>
-      </p>
-    </form>
+        <div className={styles.field}>
+          <div className={styles.labelRow}>
+            <label htmlFor="password" className={styles.fieldLabel}>Password</label>
+            <Link href="/forgot-password" className={styles.forgotLink}>Forgot password?</Link>
+          </div>
+          <input
+            id="password" type="password" required autoComplete="current-password" placeholder="••••••••"
+            value={password} onChange={(e) => setPassword(e.target.value)}
+            className={styles.input}
+          />
+        </div>
+
+        {error && <p role="alert" className={styles.error}>{error}</p>}
+
+        <button type="submit" disabled={loading} className={styles.submit}>
+          {loading ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+
+      <p className={styles.switch}>No account? <Link href="/signup">Sign up</Link></p>
+    </>
   )
 }
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
-      <div className="mb-8 flex flex-col items-center gap-3">
-        <MaestravlMark size={40} />
-        <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Welcome back</h1>
-      </div>
+    <AuthShell title="Welcome back" subtitle="Sign in to keep an eye on your trips.">
       <Suspense>
         <LoginForm />
       </Suspense>
-    </main>
+    </AuthShell>
   )
 }

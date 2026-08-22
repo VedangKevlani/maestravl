@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import MaestravlMark from '../components/MaestravlMark'
+import AuthShell from '../components/auth/AuthShell'
+import styles from '../styles/auth.module.css'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -42,49 +43,42 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
-      <div className="mb-8 flex flex-col items-center gap-3">
-        <MaestravlMark size={40} />
-        <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Create your account</h1>
-      </div>
-      <form onSubmit={onSubmit} className="w-full max-w-sm flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="name" className="text-label text-white/50">Name</label>
+    <AuthShell title="Create your account" subtitle="Track flights, trains and passengers in one place.">
+      <form onSubmit={onSubmit} className={styles.form} noValidate>
+        <div className={styles.field}>
+          <label htmlFor="name" className={styles.fieldLabel}>Name</label>
           <input
-            id="name" type="text" required autoComplete="name" value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+            id="name" type="text" required autoComplete="name" placeholder="Lumi Rivera"
+            value={name} onChange={(e) => setName(e.target.value)}
+            className={styles.input}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-label text-white/50">Email</label>
+        <div className={styles.field}>
+          <label htmlFor="email" className={styles.fieldLabel}>Email</label>
           <input
-            id="email" type="email" required autoComplete="email" value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+            id="email" type="email" required autoComplete="email" placeholder="you@example.com"
+            value={email} onChange={(e) => setEmail(e.target.value)}
+            className={styles.input}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="text-label text-white/50">Password</label>
+        <div className={styles.field}>
+          <label htmlFor="password" className={styles.fieldLabel}>Password</label>
           <input
-            id="password" type="password" required minLength={8} autoComplete="new-password" value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+            id="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+            value={password} onChange={(e) => setPassword(e.target.value)}
+            className={styles.input}
           />
-          <span className="text-label text-white/30" style={{ fontSize: '0.65rem' }}>At least 8 characters</span>
+          <div className={styles.hint}>At least 8 characters</div>
         </div>
-        {error && <p role="alert" className="text-editorial text-red-400" style={{ fontSize: '0.85rem' }}>{error}</p>}
-        <button
-          type="submit" disabled={loading}
-          className="mt-2 px-6 py-3 rounded-full text-editorial font-medium disabled:opacity-50"
-          style={{ background: 'var(--warm-white)', color: 'var(--charcoal)' }}
-        >
+
+        {error && <p role="alert" className={styles.error}>{error}</p>}
+
+        <button type="submit" disabled={loading} className={styles.submit}>
           {loading ? 'Creating account…' : 'Create account'}
         </button>
-        <p className="text-editorial text-white/40 text-center mt-2" style={{ fontSize: '0.85rem' }}>
-          Already have an account? <Link href="/login" className="text-white/70 underline">Sign in</Link>
-        </p>
       </form>
-    </main>
+
+      <p className={styles.switch}>Already have an account? <Link href="/login">Sign in</Link></p>
+    </AuthShell>
   )
 }

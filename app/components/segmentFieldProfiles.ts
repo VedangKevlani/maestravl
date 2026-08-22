@@ -2,8 +2,9 @@
 // them, varies a lot by transport type — a flight has a departure AND
 // arrival airport, a hotel has one location and a check-in/check-out pair,
 // a restaurant has one location and a single reservation time (no
-// meaningful "arrival"). Shared by TransportTypeForm.tsx (create) and
-// SegmentEditForm.tsx (edit) so the two never drift apart.
+// meaningful "arrival"). Shared by TransportTypeForm.tsx for both the
+// create and edit flows (both go through SegmentModal.tsx) so the two
+// never drift apart.
 export type SegmentFieldProfile =
   | {
       hasRoute: true

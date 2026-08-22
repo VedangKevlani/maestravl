@@ -2,7 +2,9 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import MaestravlMark from '../components/MaestravlMark'
+import { Check } from 'lucide-react'
+import AuthShell from '../components/auth/AuthShell'
+import styles from '../styles/auth.module.css'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -39,46 +41,45 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <p className="text-editorial text-white/70 text-center max-w-sm" style={{ fontSize: '0.95rem' }}>
+      <p className={styles.successText}>
         This reset link is missing its token. Request a new one from{' '}
-        <Link href="/forgot-password" className="text-white/70 underline">forgot password</Link>.
+        <Link href="/forgot-password" style={{ color: 'var(--auth-accent)' }}>forgot password</Link>.
       </p>
     )
   }
 
   if (done) {
     return (
-      <p className="text-editorial text-white/70 text-center max-w-sm" style={{ fontSize: '0.95rem' }}>
-        Password updated. Redirecting to sign in…
-      </p>
+      <div className={styles.success}>
+        <div className={styles.successIcon}><Check size={20} strokeWidth={2.5} /></div>
+        <p className={styles.successText}>Password updated. Redirecting to sign in…</p>
+      </div>
     )
   }
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-sm flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="text-label text-white/50">New password</label>
+    <form onSubmit={onSubmit} className={styles.form} noValidate>
+      <div className={styles.field}>
+        <label htmlFor="password" className={styles.fieldLabel}>New password</label>
         <input
-          id="password" type="password" required minLength={8} autoComplete="new-password" value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+          id="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+          value={password} onChange={(e) => setPassword(e.target.value)}
+          className={styles.input}
         />
-        <span className="text-label text-white/30" style={{ fontSize: '0.65rem' }}>At least 8 characters</span>
+        <div className={styles.hint}>At least 8 characters</div>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="confirmPassword" className="text-label text-white/50">Confirm password</label>
+      <div className={styles.field}>
+        <label htmlFor="confirmPassword" className={styles.fieldLabel}>Confirm password</label>
         <input
-          id="confirmPassword" type="password" required minLength={8} autoComplete="new-password" value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+          id="confirmPassword" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+          value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+          className={styles.input}
         />
       </div>
-      {error && <p role="alert" className="text-editorial text-red-400" style={{ fontSize: '0.85rem' }}>{error}</p>}
-      <button
-        type="submit" disabled={loading}
-        className="mt-2 px-6 py-3 rounded-full text-editorial font-medium disabled:opacity-50"
-        style={{ background: 'var(--warm-white)', color: 'var(--charcoal)' }}
-      >
+
+      {error && <p role="alert" className={styles.error}>{error}</p>}
+
+      <button type="submit" disabled={loading} className={styles.submit}>
         {loading ? 'Updating…' : 'Update password'}
       </button>
     </form>
@@ -87,14 +88,10 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
-      <div className="mb-8 flex flex-col items-center gap-3">
-        <MaestravlMark size={40} />
-        <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Set a new password</h1>
-      </div>
+    <AuthShell title="Set a new password">
       <Suspense>
         <ResetPasswordForm />
       </Suspense>
-    </main>
+    </AuthShell>
   )
 }

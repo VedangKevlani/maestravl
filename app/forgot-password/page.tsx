@@ -1,7 +1,9 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import MaestravlMark from '../components/MaestravlMark'
+import { Check } from 'lucide-react'
+import AuthShell from '../components/auth/AuthShell'
+import styles from '../styles/auth.module.css'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -28,39 +30,34 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 py-24" style={{ background: 'var(--charcoal)' }}>
-      <div className="mb-8 flex flex-col items-center gap-3">
-        <MaestravlMark size={40} />
-        <h1 className="text-display text-white" style={{ fontSize: '1.8rem' }}>Reset your password</h1>
-      </div>
-
+    <AuthShell title="Reset your password" subtitle="Enter the email on your account and we'll send a reset link.">
       {status === 'sent' ? (
-        <p className="text-editorial text-white/70 text-center max-w-sm" style={{ fontSize: '0.95rem' }}>
-          If an account exists for that email, we&apos;ve sent a link to reset your password. It expires in 1 hour.
-        </p>
+        <div className={styles.success}>
+          <div className={styles.successIcon}><Check size={20} strokeWidth={2.5} /></div>
+          <p className={styles.successText}>
+            If an account exists for that email, we&apos;ve sent a link to reset your password. It expires in 1 hour.
+          </p>
+        </div>
       ) : (
-        <form onSubmit={onSubmit} className="w-full max-w-sm flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-label text-white/50">Email</label>
+        <form onSubmit={onSubmit} className={styles.form} noValidate>
+          <div className={styles.field}>
+            <label htmlFor="email" className={styles.fieldLabel}>Email</label>
             <input
-              id="email" type="email" required autoComplete="email" value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="glass-card px-4 py-3 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+              id="email" type="email" required autoComplete="email" placeholder="you@example.com"
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              className={styles.input}
             />
           </div>
-          {error && <p role="alert" className="text-editorial text-red-400" style={{ fontSize: '0.85rem' }}>{error}</p>}
-          <button
-            type="submit" disabled={status === 'loading'}
-            className="mt-2 px-6 py-3 rounded-full text-editorial font-medium disabled:opacity-50"
-            style={{ background: 'var(--warm-white)', color: 'var(--charcoal)' }}
-          >
+
+          {error && <p role="alert" className={styles.error}>{error}</p>}
+
+          <button type="submit" disabled={status === 'loading'} className={styles.submit}>
             {status === 'loading' ? 'Sending…' : 'Send reset link'}
           </button>
-          <p className="text-editorial text-white/40 text-center mt-2" style={{ fontSize: '0.85rem' }}>
-            <Link href="/login" className="text-white/70 underline">Back to sign in</Link>
-          </p>
         </form>
       )}
-    </main>
+
+      <p className={styles.back}><Link href="/login">← Back to sign in</Link></p>
+    </AuthShell>
   )
 }

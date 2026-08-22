@@ -6,96 +6,124 @@ import Link from 'next/link'
 export default function Scene10Closing() {
   const ref = useRef<HTMLDivElement>(null)
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end end'] })
-  const bgScale = useTransform(scrollYProgress, [0, 1], [1.1, 1])
+  const cardScale = useTransform(scrollYProgress, [0, 1], [1.05, 1])
 
   return (
-    <section ref={ref} id="contact" className="relative overflow-hidden" style={{ minHeight: '140vh' }}>
-      {/* Sunrise-warm video backdrop */}
-      <motion.div className="absolute inset-0" style={{ scale: bgScale }}>
-        <video
-          autoPlay muted loop playsInline
-          className="scene-video"
-          style={{ filter: 'brightness(0.3) saturate(0.9) hue-rotate(10deg)' }}
-        >
-          <source src="/videos/sce7.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0" style={{
-          background: 'linear-gradient(115deg, rgba(20,20,20,0.25) 0%, rgba(20,20,20,0.5) 40%, rgba(20,20,20,0.88) 78%, rgba(20,20,20,0.92) 100%)'
-        }} />
-      </motion.div>
-
-      <div className="relative z-10 flex flex-col items-end justify-center text-right px-6 sm:px-10 lg:px-16 py-24 ml-auto" style={{ minHeight: '140vh', width: 'min(100%, 680px)' }}>
-        <motion.h2
-          className="text-display text-white mb-8"
-          style={{ fontSize: 'clamp(2.2rem, 6vw, 5.5rem)', lineHeight: 1, maxWidth: '15ch' }}
-          initial={{ opacity: 0, y: 40 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        >
-          Travel isn't constrained
-          <br />
-          <span style={{ color: 'var(--sand)', fontWeight: 300 }}>by demand.</span>
-        </motion.h2>
-
-        <motion.p
-          className="text-editorial text-white/58 mb-4"
-          style={{ fontSize: 'clamp(1rem, 2.5vw, 1.4rem)', maxWidth: '32ch' }}
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.5 }}
-        >
-          It's constrained by coordination.
-        </motion.p>
-
-        <motion.p
-          className="text-editorial text-white/40 mb-16"
-          style={{ fontSize: '1rem', maxWidth: '40ch' }}
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.7 }}
-        >
-          Maestravl is building the coordination layer for Caribbean tourism — and beyond. Join us.
-        </motion.p>
-
+    <section
+      ref={ref}
+      id="contact"
+      className="relative overflow-hidden"
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        background: 'linear-gradient(135deg, #0a0b0e 0%, #12141a 55%, #162016 100%)',
+      }}
+    >
+      {/* 2-column row — directly flex-centered in the section */}
+      <div
+        className="flex items-center justify-center w-full px-8 sm:px-12 lg:px-20 gap-3 lg:gap-5 pt-24 pb-16"
+        style={{ maxWidth: '1280px', margin: '0 auto' }}
+      >
+        {/* Left: rounded video card */}
         <motion.div
-          className="flex flex-col sm:flex-row gap-4 items-end sm:items-center"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.9 }}
+          className="flex-1 hidden sm:block"
+          style={{ maxWidth: '520px' }}
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3, duration: 1, ease: [0.16, 1, 0.3, 1] }}
         >
-          <Link
-            href="/signup"
-            className="px-10 py-4 rounded-full text-editorial font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg"
+          <motion.div
+            className="relative overflow-hidden"
             style={{
-              background: 'var(--warm-white)',
-              color: 'var(--charcoal)',
-              fontSize: '0.95rem',
-              letterSpacing: '-0.01em',
+              borderRadius: 24,
+              border: '1px solid rgba(255,255,255,0.08)',
+              aspectRatio: '1/1',
+              scale: cardScale,
             }}
           >
-            Join the Future of Tourism
-          </Link>
-          <a
-            href="mailto:operators@maestravl.com"
-            className="px-10 py-4 rounded-full text-editorial transition-all duration-300 hover:bg-white/10"
-            style={{
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'rgba(255,255,255,0.7)',
-              fontSize: '0.95rem',
-            }}
-          >
-            I'm an Operator
-          </a>
+            <video
+              autoPlay muted loop playsInline
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                objectFit: 'cover',
+                filter: 'brightness(0.68) saturate(0.85)',
+              }}
+            >
+              <source src="/videos/sce7.mp4" type="video/mp4" />
+            </video>
+            <div className="absolute inset-0" style={{
+              background: 'linear-gradient(to bottom right, rgba(10,10,10,0.08) 0%, rgba(10,10,10,0.4) 100%)'
+            }} />
+          </motion.div>
         </motion.div>
 
-        {/* Footer */}
-        <div className="absolute bottom-8 left-0 right-0 flex justify-center">
-          <p className="text-label text-white/32">© {new Date().getFullYear()} Maestravl Technologies · Caribbean</p>
-        </div>
+        {/* Right: text + CTA */}
+        <motion.div
+          className="flex-1 flex flex-col items-end justify-center text-right"
+          style={{ maxWidth: '520px' }}
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <p className="text-label text-white/40 mb-8">
+            the future of tourism coordination
+          </p>
+
+          <h2
+            className="text-display text-white mb-6"
+            style={{ fontSize: 'clamp(2.2rem, 5.5vw, 4.75rem)', lineHeight: 1.0, maxWidth: '15ch' }}
+          >
+            Travel isn't constrained<br />
+            <span style={{ color: 'var(--accent, #8fc180)', fontWeight: 300 }}>by demand.</span>
+          </h2>
+
+          <p
+            className="text-editorial text-white/58 mb-3"
+            style={{ fontSize: 'clamp(1rem, 2vw, 1.3rem)', maxWidth: '32ch' }}
+          >
+            It's constrained by coordination.
+          </p>
+
+          <p
+            className="text-editorial text-white/40 mb-12"
+            style={{ fontSize: '0.95rem', maxWidth: '38ch' }}
+          >
+            Maestravl is building the coordination layer for Caribbean tourism — and beyond. Join us.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 items-end sm:items-center">
+            <Link
+              href="/signup"
+              className="px-10 py-4 rounded-full text-editorial font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg"
+              style={{
+                background: 'var(--accent, #8fc180)',
+                color: '#0f1218',
+                fontSize: '0.95rem',
+                fontWeight: 600,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Join the Future of Tourism
+            </Link>
+            <a
+              href="mailto:operators@maestravl.com"
+              className="px-10 py-4 rounded-full text-editorial transition-all duration-300 hover:bg-white/10"
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: '0.95rem',
+              }}
+            >
+              I'm an Operator
+            </a>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Footer */}
+      <div className="absolute bottom-4 left-0 right-0 flex justify-center z-20">
+        <p className="text-label text-white/32">© {new Date().getFullYear()} Maestravl Technologies · Caribbean</p>
       </div>
     </section>
   )

@@ -1,0 +1,289 @@
+/* =========================================================
+   Auth page styling — ported from new-frontend-src/auth.css +
+   common.css design tokens. Scoped as a CSS module so it only
+   affects app/login, app/signup, app/forgot-password,
+   app/reset-password and never leaks into the rest of the app
+   (landing page, dashboard, etc. are untouched).
+
+   Design-token custom properties (--auth-*) live in
+   app/globals.css, not here — css-loader's "pure" mode rejects
+   a module file whose top-level selectors are entirely global.
+   ========================================================= */
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: linear-gradient(135deg, #0a0b0e 0%, #12151c 60%, #1b1812 100%);
+  overflow: hidden;
+}
+
+.bgWrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.bgImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.55) contrast(1.1) saturate(0.78);
+}
+
+.bgOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(10, 11, 14, 0.2) 0%, rgba(10, 11, 14, 0.65) 100%),
+              linear-gradient(135deg, rgba(10, 11, 14, 0.6) 0%, rgba(18, 21, 28, 0.45) 60%, rgba(27, 24, 18, 0.6) 100%);
+  pointer-events: none;
+}
+
+.content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+  width: 100%;
+}
+
+.brandImg {
+  height: 48px;
+  width: auto;
+  display: block;
+}
+
+.title {
+  font-family: var(--auth-heading-font, 'Manrope'), sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--auth-black);
+  margin: 0;
+  text-align: center;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--auth-muted);
+  margin: 2px 0 0;
+  text-align: center;
+  max-width: 340px;
+  line-height: 1.4;
+  font-family: 'Manrope', sans-serif;
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--auth-radius-lg);
+  background: rgba(33, 35, 43, 0.85);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  padding: 32px 30px 30px;
+  font-family: 'Manrope', sans-serif;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.field {
+  margin-bottom: 18px;
+}
+.field:last-of-type {
+  margin-bottom: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.fieldLabel {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--auth-ink);
+  margin-bottom: 6px;
+  display: block;
+}
+.labelRow .fieldLabel {
+  margin-bottom: 0;
+}
+
+.forgotLink {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--auth-faint);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.forgotLink:hover {
+  color: var(--auth-accent);
+}
+
+.input {
+  width: 100%;
+  border: 1.5px solid var(--auth-border);
+  border-radius: var(--auth-radius-sm);
+  padding: 9px 16px;
+  font-size: 13px;
+  color: var(--auth-ink);
+  background: var(--card, #1b1d22);
+  font-family: inherit;
+  outline: none;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+.input:focus {
+  outline: 2px solid rgba(63, 107, 57, 0.22);
+  border-color: var(--auth-accent);
+}
+.input::placeholder {
+  color: var(--auth-faint);
+}
+
+.hint {
+  font-size: 10.5px;
+  color: var(--auth-faint);
+  margin-top: 6px;
+}
+
+.error {
+  border: 1px solid var(--auth-danger-border);
+  background: var(--auth-danger-bg);
+  color: var(--auth-danger);
+  border-radius: var(--auth-radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 18px 0 0;
+}
+
+.submit {
+  width: 100%;
+  margin-top: 24px;
+  border: 1.5px solid transparent;
+  background: var(--auth-accent);
+  color: #0a0b0e;
+  border-radius: var(--auth-radius-pill);
+  padding: 11px 22px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(63, 107, 57, 0.28);
+  font-family: 'Manrope', sans-serif;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+.submit:hover:not(:disabled) {
+  filter: brightness(1.07);
+  box-shadow: 0 4px 16px rgba(63, 107, 57, 0.32);
+  transform: translateY(-1px);
+}
+.submit:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.submit:disabled {
+  background: var(--auth-disabled-bg);
+  border-color: var(--auth-disabled-bg);
+  color: var(--auth-disabled-ink);
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+
+.switch {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--auth-muted);
+  margin-top: 22px;
+}
+.switch a {
+  color: var(--auth-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.switch a:hover {
+  text-decoration: underline;
+}
+
+.back {
+  text-align: center;
+  margin-top: 22px;
+}
+.back a {
+  font-size: 12.5px;
+  color: var(--auth-muted);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.back a:hover {
+  color: var(--auth-accent);
+}
+
+.success {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.successIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--auth-green-bg);
+  border: 1.5px solid rgba(62, 203, 132, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+  color: var(--auth-green);
+}
+.successText {
+  font-size: 13px;
+  color: var(--auth-ink);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .splitShell {
+    flex-direction: column;
+  }
+  .leftPanel {
+    display: none;
+  }
+  .rightPanel {
+    flex: 1;
+    width: 100%;
+    padding: 40px 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 26px 22px 24px;
+  }
+}

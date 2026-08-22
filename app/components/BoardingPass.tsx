@@ -3,17 +3,23 @@ import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useRouter } from 'next/navigation'
+import { ArrowRight, ChevronDown, Bell, GripVertical, Eye } from 'lucide-react'
+import DelayModal from './DelayModal'
+import SegmentUpdatesModal from './SegmentUpdatesModal'
 import ConfidenceBadge from './ConfidenceBadge'
-import SegmentEditForm from './SegmentEditForm'
-import { TRANSPORT_ICONS, type PassengerDTO, type SegmentDTO } from './types'
+import SegmentModal from './SegmentModal'
+import { type PassengerDTO, type SegmentDTO } from './types'
+import { TransportTypeIcon } from './transportIcons'
 import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { toLocalInputValue } from './dateInput'
 import { isUberConfigured, locationText, buildUberDeepLink, isPlausibleUberTrip } from '@/lib/uber'
 import { getFieldProfile } from './segmentFieldProfiles'
 import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
 import SegmentWorldClock from './SegmentWorldClock'
+import ConfirmDialog from './ConfirmDialog'
 import { STATUS_COPY, toneOf } from '@/lib/agents/statusCopy'
 import { isTerminalRunStatus } from '@/lib/constants'
+import styles from '../styles/trip.module.css'
 
 const fieldClassSmall = 'glass-card px-2.5 py-1.5 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40'
 
@@ -65,6 +71,11 @@ const CHECK_STATUS_STYLES: Record<string, { bg: string; fg: string }> = {
 function formatDateTime(iso: string | null, timezone: string | null = null) {
   if (!iso) return null
   return formatFriendlyTime(new Date(iso), timezone)
+}
+
+function formatDateLong(iso: string | null) {
+  if (!iso) return null
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(iso))
 }
 
 const MONITORING_LABEL: Record<string, string> = {
@@ -160,21 +171,24 @@ function MessagesPanel({ runId }: { runId: string }) {
   )
 }
 
-export default function BoardingPass({ segment, passengers, nextSegment, homeTimezone }: { segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null; homeTimezone: string | null }) {
+export default function BoardingPass({ tripId, segment, passengers, nextSegment, homeTimezone }: { tripId: string; segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null; homeTimezone: string | null }) {
   const router = useRouter()
-  const [editing, setEditing] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [checking, setChecking] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [reportNewTime, setReportNewTime] = useState(() => toLocalInputValue(segment.departureTime))
   const [reporting, setReporting] = useState(false)
   const [reportResult, setReportResult] = useState<ReportResult | null>(null)
-  const [manageOpen, setManageOpen] = useState(false)
   const [messagesOpen, setMessagesOpen] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [delayModalOpen, setDelayModalOpen] = useState(false)
+  const [updatesModalOpen, setUpdatesModalOpen] = useState(false)
+  const [extraOpen, setExtraOpen] = useState(false)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: segment.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -212,10 +226,14 @@ export default function BoardingPass({ segment, passengers, nextSegment, homeTim
   const runHeadline = activeRun ? (STATUS_COPY[activeRun.status]?.headline ?? activeRun.status) : null
   const pillStyle = SEGMENT_STATUS_STYLES[segment.status] ?? { bg: 'rgba(255,255,255,0.08)', fg: 'rgba(255,255,255,0.6)', label: segment.status }
 
-  async function handleDelete() {
-    if (!confirm('Remove this segment from the trip?')) return
+  function handleDeleteClick() {
+    setDeleteConfirmOpen(true)
+  }
+
+  async function handleDeleteConfirmed() {
     setDeleting(true)
     await fetch(`/api/segments/${segment.id}`, { method: 'DELETE' })
+    setDeleteConfirmOpen(false)
     router.refresh()
   }
 
@@ -280,292 +298,352 @@ export default function BoardingPass({ segment, passengers, nextSegment, homeTim
     router.refresh()
   }
 
-  if (editing) {
-    return (
-      <div ref={setNodeRef} style={style} className="glass-card p-5">
-        <SegmentEditForm segment={segment} passengers={passengers} onDone={() => { setEditing(false); router.refresh() }} onCancel={() => setEditing(false)} />
-      </div>
-    )
-  }
-
   return (
-    <div ref={setNodeRef} style={style} data-tour="segment-card" className="glass-card p-5 flex gap-4">
-      <button
-        {...attributes} {...listeners}
-        aria-label="Drag to reorder"
-        className="text-white/25 hover:text-white/60 cursor-grab active:cursor-grabbing touch-none px-1 self-stretch flex items-center"
-      >
-        ⠿
-      </button>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <span aria-hidden="true" style={{ fontSize: '1.1rem' }}>{TRANSPORT_ICONS[segment.transportType] ?? '•'}</span>
-            <p className="text-editorial text-white font-medium truncate">
-              {segment.provider || segment.transportType} {segment.identifier ? `· ${segment.identifier}` : ''}
-            </p>
-          </div>
-          <span
-            key={segment.status}
-            className="text-label px-2.5 py-1 rounded-full whitespace-nowrap fade-in-text"
-            style={{ background: pillStyle.bg, color: pillStyle.fg, fontSize: '0.62rem' }}
-          >
-            {pillStyle.label}
-          </span>
+    <div ref={setNodeRef} style={style} data-tour="segment-card" id={`seg-${segment.id}`} className={styles.segBlock}>
+      <div className={styles.segMetaRow}>
+        <span data-tip="Maestro is actively watching this segment">
+          <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
+          LAST CHECKED: {segment.monitoring?.lastCheckedAt ? formatRelativeTime(segment.monitoring.lastCheckedAt) : 'just now'}
+        </span>
+        <span
+          className={styles.checkStatusBtn}
+          data-tip="Ask Maestro to re-check this segment's status right now"
+          onClick={handleCheckNow}
+          style={{ cursor: checking ? 'wait' : 'pointer' }}
+        >
+          {checking ? 'Checking…' : 'Check Status Now'}
+        </span>
+        <div className={styles.metaSpacer} />
+        <div
+          className={styles.bellDot}
+          onClick={() => setUpdatesModalOpen(true)}
+          data-tip="View all Maestro updates and alerts for this segment"
+        >
+          <Bell size={13} />
         </div>
+        <button
+          type="button"
+          data-tip="Flag a delay or cancellation to start recovery"
+          onClick={() => setDelayModalOpen(true)}
+          className={styles.smallBtn}
+        >
+          Report Delay
+        </button>
+      </div>
 
-        {(segment.departureLocationCode || segment.arrivalLocationCode) && (
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-display text-white" style={{ fontSize: '1.5rem' }}>{segment.departureLocationCode ?? '?'}</span>
-            <span className="text-white/25" aria-hidden="true">→</span>
-            <span className="text-display text-white" style={{ fontSize: '1.5rem' }}>{segment.arrivalLocationCode ?? '?'}</span>
+      <div className={styles.segRow}>
+        <button
+          {...attributes} {...listeners}
+          aria-label="Drag to reorder"
+          className={styles.segDrag}
+        >
+          <GripVertical size={16} />
+        </button>
+
+        <div className={styles.ticketCard}>
+          <div className={styles.ticketSide}>
+            <div className={styles.ticketIcon}>
+              <TransportTypeIcon type={segment.transportType} size={20} />
+            </div>
+            <div className={styles.segTypeLabel}>
+              {segment.transportType.toUpperCase()}
+            </div>
           </div>
-        )}
-        {(segment.departureLocation || segment.arrivalLocation) && (
-          <p className="text-editorial text-white/50 mb-3" style={{ fontSize: '0.82rem' }}>
-            {segment.departureLocation ?? '?'} → {segment.arrivalLocation ?? '?'}
-          </p>
-        )}
 
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
-          {segment.departureTime && (
-            <div key={`dep-${segment.departureTime}`} className="fade-in-text">
-              <p className="text-label text-white/25" style={{ fontSize: '0.58rem' }}>Departs</p>
-              <p className="text-editorial text-white/80" style={{ fontSize: '0.85rem' }}>{formatDateTime(segment.departureTime, segmentZones.departure)}</p>
+          <div className={styles.ticketMain}>
+            <div className={styles.ticketHead}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  className={styles.updatesSent}
+                  onClick={() => setUpdatesModalOpen(true)}
+                  data-tip="View all Maestro updates and alerts for this segment"
+                >
+                  <Bell size={11} />
+                  {linkedPassengers.length === 0
+                    ? 'No passengers notified'
+                    : `Updates sent to: ${linkedPassengers.map((p) => p.name).join(', ')}`}
+                </span>
+                {fieldsNeedingReview.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    {fieldsNeedingReview.map(([field, score]) => (
+                      <ConfidenceBadge key={field} confidence={score} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
+                <span
+                  key={segment.status}
+                  className={styles.confidenceBadge}
+                  style={{ background: pillStyle.bg, color: pillStyle.fg }}
+                >
+                  {pillStyle.label.toUpperCase()}
+                </span>
+                <div
+                  className={styles.ticketExpand}
+                  onClick={() => setExtraOpen((v) => !v)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px',
+                    borderRadius: '50%', background: 'rgba(255, 255, 255, 0.05)', color: 'rgba(255, 255, 255, 0.6)',
+                    cursor: 'pointer', transition: 'all 0.15s ease'
+                  }}
+                  data-tip="Show gate, seat, and confirmation details"
+                >
+                  <ChevronDown size={13} style={{ transform: extraOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                </div>
+              </div>
             </div>
-          )}
-          {segment.arrivalTime && (
-            <div key={`arr-${segment.arrivalTime}`} className="fade-in-text">
-              <p className="text-label text-white/25" style={{ fontSize: '0.58rem' }}>Arrives</p>
-              <p className="text-editorial text-white/80" style={{ fontSize: '0.85rem' }}>{formatDateTime(segment.arrivalTime, segmentZones.arrival)}</p>
-            </div>
-          )}
-          {(segment.departureGate || segment.departureTerminal) && (
-            <div>
-              <p className="text-label text-white/25" style={{ fontSize: '0.58rem' }}>Gate / Terminal</p>
-              <p className="text-editorial text-white/80" style={{ fontSize: '0.85rem' }}>{[segment.departureGate, segment.departureTerminal].filter(Boolean).join(' · ')}</p>
-            </div>
-          )}
-          {segment.seat && (
-            <div>
-              <p className="text-label text-white/25" style={{ fontSize: '0.58rem' }}>Seat</p>
-              <p className="text-editorial text-white/80" style={{ fontSize: '0.85rem' }}>{segment.seat}</p>
-            </div>
-          )}
-          {segment.confirmationNumber && (
-            <div>
-              <p className="text-label text-white/25" style={{ fontSize: '0.58rem' }}>Confirmation</p>
-              <p className="text-editorial text-white/80" style={{ fontSize: '0.85rem' }}>{segment.confirmationNumber}</p>
-            </div>
-          )}
-        </div>
 
-        <SegmentWorldClock segment={segment} homeTimezone={homeTimezone} />
-
-        {fieldsNeedingReview.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-3">
-            <span className="text-label text-white/30" style={{ fontSize: '0.6rem' }}>please confirm:</span>
-            {fieldsNeedingReview.map(([field, score]) => (
-              <span key={field} className="inline-flex items-center gap-1">
-                <span className="text-label text-white/50" style={{ fontSize: '0.62rem' }}>{field}</span>
-                <ConfidenceBadge confidence={score} />
+            <div className={styles.ticketFlightline}>
+              <span className={styles.carrier}>
+                {segment.provider || segment.transportType} {segment.identifier ? `· ${segment.identifier}` : ''}
               </span>
-            ))}
-          </div>
-        )}
-
-        {showRibbon && activeRun && (
-          <div
-            key={`${activeRun.id}-${activeRun.status}-${activeRun.summary ?? ''}`}
-            className="mt-3 rounded-lg p-3 fade-in-text"
-            style={{ background: (runTone && RUN_TONE_COLOR[runTone]?.bg) || 'rgba(255,255,255,0.04)' }}
-          >
-            <p className="text-editorial text-white/85" style={{ fontSize: '0.82rem', lineHeight: 1.55 }}>
-              {isReschedulingPrompt ? activeRun.summary : runHeadline}
-            </p>
-            {isReschedulingPrompt && (
-              <p className="text-label text-white/40 mt-1.5" style={{ fontSize: '0.58rem' }}>
-                Maestravl thinks this reply means yes, but only you can confirm it — check the messages below before deciding.
-              </p>
-            )}
-            <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-              {isReschedulingPrompt && (
-                <>
-                  <button
-                    onClick={() => handleConfirmReschedule(true)}
-                    disabled={confirming}
-                    className="px-3.5 py-1.5 rounded-full text-label disabled:opacity-50"
-                    style={{ background: 'var(--warm-white)', color: 'var(--charcoal)', fontSize: '0.62rem' }}
-                  >
-                    {confirming ? 'Updating…' : 'Confirm — update itinerary'}
-                  </button>
-                  <button
-                    onClick={() => handleConfirmReschedule(false)}
-                    disabled={confirming}
-                    className="px-3.5 py-1.5 rounded-full text-label disabled:opacity-50 border border-white/15"
-                    style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.62rem' }}
-                  >
-                    Not quite
-                  </button>
-                </>
-              )}
-              {canResolve && !resolveOpen && (
-                <button
-                  onClick={() => setResolveOpen(true)}
-                  className="text-label text-white/40 hover:text-white/80"
-                  style={{ fontSize: '0.6rem' }}
-                >
-                  Heard back?
-                </button>
-              )}
-              <button
-                onClick={() => setMessagesOpen((v) => !v)}
-                className="text-label text-white/40 hover:text-white/80"
-                style={{ fontSize: '0.6rem' }}
-              >
-                {messagesOpen ? 'Hide messages' : 'View messages'}
-              </button>
+              <span className={styles.ticketDate}>
+                {segment.departureTime ? formatDateLong(segment.departureTime)?.toUpperCase() : ''}
+              </span>
             </div>
 
-            {resolveOpen && canResolve && (
-              <div className="flex flex-col gap-2 mt-2.5 pt-2.5 border-t border-white/10">
-                <p className="text-label text-white/40" style={{ fontSize: '0.58rem' }}>
-                  Maestravl can't yet tell automatically when a provider replies — if you heard back yourself, let it know here.
-                </p>
-                <textarea
-                  value={resolveNote}
-                  onChange={(e) => setResolveNote(e.target.value)}
-                  placeholder="What did they say? (optional)"
-                  rows={2}
-                  className="glass-card px-3 py-2 text-editorial text-white bg-transparent outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
-                  style={{ fontSize: '0.8rem' }}
-                />
-                <button
-                  onClick={handleResolve}
-                  disabled={resolving}
-                  className="self-start px-3.5 py-1.5 rounded-full text-label disabled:opacity-50"
-                  style={{ background: 'var(--warm-white)', color: 'var(--charcoal)', fontSize: '0.62rem' }}
-                >
-                  {resolving ? 'Saving…' : 'Mark as resolved'}
-                </button>
+            {(segment.departureLocationCode || segment.arrivalLocationCode || segment.departureLocation || segment.arrivalLocation) && (
+              <div className={styles.ticketRoute}>
+                <div className={styles.ticketEndpoint}>
+                  <div className={styles.code}>{segment.departureLocationCode ?? '—'}</div>
+                  <div className={styles.place}>{segment.departureLocation ?? ''}</div>
+                  <div className={styles.time}>{segment.departureTime ? formatDateTime(segment.departureTime, segmentZones.departure) : '—'}</div>
+                  <div className={styles.tz}>{segmentZones.departure ?? ''}</div>
+                </div>
+
+                <div className={styles.ticketArrow}>
+                  <ArrowRight size={20} />
+                </div>
+
+                <div className={`${styles.ticketEndpoint} ${styles.ticketEndpointRight}`}>
+                  <div className={styles.code}>{segment.arrivalLocationCode ?? '—'}</div>
+                  <div className={styles.place}>{segment.arrivalLocation ?? ''}</div>
+                  <div className={styles.time}>{segment.arrivalTime ? formatDateTime(segment.arrivalTime, segmentZones.arrival) : '—'}</div>
+                  <div className={styles.tz}>{segmentZones.arrival ?? ''}</div>
+                </div>
               </div>
             )}
 
-            {messagesOpen && <MessagesPanel runId={activeRun.id} />}
-          </div>
-        )}
+            <SegmentWorldClock segment={segment} homeTimezone={homeTimezone} />
 
-        <button
-          onClick={() => setManageOpen((v) => !v)}
-          className="text-label text-white/30 hover:text-white/70 mt-3"
-          style={{ fontSize: '0.6rem' }}
-        >
-          {manageOpen ? 'Hide details' : 'Manage'}
-        </button>
-
-        {manageOpen && (
-          <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-3">
-            <div className="flex gap-1.5">
-              <button onClick={() => setEditing(true)} className="text-label text-white/40 hover:text-white/80" style={{ fontSize: '0.65rem' }}>Edit</button>
-              <button onClick={handleDelete} disabled={deleting} className="text-label text-white/40 hover:text-red-400" style={{ fontSize: '0.65rem' }}>
-                {deleting ? '…' : 'Remove'}
-              </button>
-            </div>
-
-            <p className="text-label text-white/25" style={{ fontSize: '0.6rem' }}>
-              {linkedPassengers.length === 0
-                ? 'No passengers linked — won\'t be notified of changes'
-                : `Notifies: ${linkedPassengers.map((p) => p.email ? p.name : `${p.name} (no email)`).join(', ')}`}
-            </p>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-label text-white/20" style={{ fontSize: '0.6rem' }}>
-                {monitoringLabel(segment.monitoring)}
-                {segment.monitoring?.lastCheckedAt && ` · last checked ${formatDateTime(segment.monitoring.lastCheckedAt)}`}
-              </p>
-              {checkStatus && segment.monitoring?.status === 'ACTIVE' && (
-                <span
-                  className="text-label px-2 py-0.5 rounded-full"
-                  style={{ background: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).bg, color: (CHECK_STATUS_STYLES[checkStatus] ?? CHECK_STATUS_STYLES.UNKNOWN).fg, fontSize: '0.6rem' }}
-                >
-                  {formatMonitoringStatus(checkStatus)}
-                </span>
-              )}
-              {segment.monitoring?.status === 'ACTIVE' && (
-                <button
-                  onClick={handleCheckNow}
-                  disabled={checking}
-                  className="text-label text-white/40 hover:text-white/80 disabled:opacity-50"
-                  style={{ fontSize: '0.6rem' }}
-                >
-                  {checking ? 'Checking…' : 'Check now'}
-                </button>
-              )}
-              <button
-                onClick={() => { setReportOpen((v) => !v); setReportResult(null) }}
-                className="text-label text-white/40 hover:text-white/80"
-                style={{ fontSize: '0.6rem' }}
+            {showRibbon && activeRun && (
+              <div
+                key={`${activeRun.id}-${activeRun.status}-${activeRun.summary ?? ''}`}
+                className={styles.runRibbon}
+                style={{ background: (runTone && RUN_TONE_COLOR[runTone]?.bg) || 'rgba(255,255,255,0.04)' }}
               >
-                {reportOpen ? 'Cancel' : 'Report a delay'}
-              </button>
-              {uberHref && (
-                <a
-                  href={uberHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-label text-white/40 hover:text-white/80"
-                  style={{ fontSize: '0.6rem' }}
-                >
-                  Get an Uber there →
-                </a>
-              )}
-            </div>
+                <p>
+                  {isReschedulingPrompt ? activeRun.summary : runHeadline}
+                </p>
+                {isReschedulingPrompt && (
+                  <p className={styles.runRibbonNote}>
+                    Maestravl thinks this reply means yes, but only you can confirm it — check the messages below before deciding.
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                  {isReschedulingPrompt && (
+                    <>
+                      <button
+                        onClick={() => handleConfirmReschedule(true)}
+                        disabled={confirming}
+                        className={styles.manageBtn}
+                      >
+                        {confirming ? 'Updating…' : 'Confirm — update itinerary'}
+                      </button>
+                      <button
+                        onClick={() => handleConfirmReschedule(false)}
+                        disabled={confirming}
+                        className={styles.manageBtnSecondary}
+                      >
+                        Not quite
+                      </button>
+                    </>
+                  )}
+                  {canResolve && !resolveOpen && (
+                    <button
+                      onClick={() => setResolveOpen(true)}
+                      className={styles.linkBtn}
+                    >
+                      Heard back?
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setMessagesOpen((v) => !v)}
+                    className={styles.linkBtn}
+                  >
+                    {messagesOpen ? 'Hide messages' : 'View messages'}
+                  </button>
+                  <button
+                    onClick={() => router.push(`?segment=${segment.id}&tab=updates#trip-activity`)}
+                    className={styles.linkBtn}
+                  >
+                    View full history
+                  </button>
+                </div>
+
+                {resolveOpen && canResolve && (
+                  <div className="flex flex-col gap-2 mt-2.5 pt-2.5 border-t border-white/10">
+                    <p className={styles.notifiesNote}>
+                      Maestravl can't yet tell automatically when a provider replies — if you heard back yourself, let it know here.
+                    </p>
+                    <textarea
+                      value={resolveNote}
+                      onChange={(e) => setResolveNote(e.target.value)}
+                      placeholder="What did they say? (optional)"
+                      rows={2}
+                      className={fieldClassSmall}
+                    />
+                    <button
+                      onClick={handleResolve}
+                      disabled={resolving}
+                      className={styles.manageBtn}
+                    >
+                      {resolving ? 'Saving…' : 'Mark as resolved'}
+                    </button>
+                  </div>
+                )}
+
+                {messagesOpen && <MessagesPanel runId={activeRun.id} />}
+              </div>
+            )}
 
             {reportOpen && (
-              <div className="glass-card p-3 flex flex-col gap-2.5">
-                <p className="text-label text-white/40" style={{ fontSize: '0.6rem' }}>
+              <div className={styles.reportPanel}>
+                <p>
                   Manually tell Maestravl this segment was delayed or cancelled — this is exactly what a real detected
-                  disruption triggers, so you can see (and get emailed about) the full recovery flow without waiting on
-                  live monitoring.
+                  disruption triggers.
                 </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-editorial text-white/50" style={{ fontSize: '0.78rem' }}>New {reportTimeLabelLower}:</span>
+                <div className={styles.reportRow}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>New {reportTimeLabelLower}:</span>
                   <input
                     type="datetime-local"
                     value={reportNewTime}
                     onChange={(e) => setReportNewTime(e.target.value)}
-                    className={fieldClassSmall}
+                    className={styles.reportInput}
                     aria-label={`New ${reportTimeLabelLower}`}
                   />
                   <button
                     onClick={() => handleReport('DELAYED')}
                     disabled={reporting}
-                    className="px-3 py-1.5 rounded-full text-label disabled:opacity-50"
-                    style={{ background: 'var(--warm-white)', color: 'var(--charcoal)', fontSize: '0.65rem' }}
+                    className={styles.manageBtn}
                   >
                     {reporting ? 'Reporting…' : 'Report delay'}
                   </button>
                   <button
                     onClick={() => handleReport('CANCELLED')}
                     disabled={reporting}
-                    className="px-3 py-1.5 rounded-full text-label border border-white/20 text-white/70 disabled:opacity-50"
-                    style={{ fontSize: '0.65rem' }}
+                    className={styles.manageBtnSecondary}
                   >
                     {reporting ? 'Reporting…' : 'Report cancelled'}
                   </button>
                 </div>
 
                 {reportResult && (
-                  <p className="text-editorial text-white/60 border-t border-white/10 pt-2.5 mt-1" style={{ fontSize: '0.8rem' }}>
-                    {reportResult.message ?? 'Reported — see the status ribbon above.'}
+                  <p style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                    {reportResult.message ?? 'Reported — see status above.'}
                   </p>
                 )}
               </div>
             )}
+
+            {extraOpen && (segment.departureGate || segment.departureTerminal || segment.seat || segment.confirmationNumber || segment.notes ? (
+              <div className={styles.collapseBody} style={{ display: 'block', borderTop: '1.5px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
+                <div className={styles.ticketExtra}>
+                  {(segment.departureGate || segment.departureTerminal) && (
+                    <div>
+                      <div className={styles.label}>GATE / TERMINAL</div>
+                      <div className={styles.val}>{[segment.departureGate, segment.departureTerminal].filter(Boolean).join(' · ')}</div>
+                    </div>
+                  )}
+                  {segment.seat && (
+                    <div>
+                      <div className={styles.label}>SEAT</div>
+                      <div className={styles.val}>{segment.seat}</div>
+                    </div>
+                  )}
+                  {segment.confirmationNumber && (
+                    <div>
+                      <div className={styles.label}>CONFIRMATION</div>
+                      <div className={styles.val}>{segment.confirmationNumber}</div>
+                    </div>
+                  )}
+                  {segment.notes && (
+                    <div style={{ flex: '1 1 100%' }}>
+                      <div className={styles.label}>NOTES</div>
+                      <div className={styles.val}>{segment.notes}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className={styles.collapseBody} style={{ display: 'block', borderTop: '1.5px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
+                <p style={{ fontSize: '11px', color: 'var(--faint)' }}>No gate, seat, or confirmation details added yet.</p>
+              </div>
+            ))}
+
+            <div className={styles.ticketFooter}>
+              {uberHref && (
+                <a
+                  href={uberHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.manageBtnSecondary}
+                >
+                  Get an Uber there →
+                </a>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+        <button
+          type="button"
+          onClick={() => setEditModalOpen(true)}
+          className={styles.manageBtn}
+        >
+          Manage
+        </button>
+      </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Remove segment?"
+        message="Remove this segment from the trip? This can't be undone."
+        confirmLabel="Remove segment"
+        danger
+        loading={deleting}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
+
+      <DelayModal
+        segmentId={segment.id}
+        tripId={tripId}
+        isOpen={delayModalOpen}
+        onClose={() => setDelayModalOpen(false)}
+      />
+
+      <SegmentUpdatesModal
+        segmentId={segment.id}
+        segmentName={`${segment.provider || segment.transportType} ${segment.identifier || ''}`}
+        tripId={tripId}
+        isOpen={updatesModalOpen}
+        onClose={() => setUpdatesModalOpen(false)}
+      />
+
+      <SegmentModal
+        tripId={tripId}
+        passengers={passengers}
+        segment={segment}
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onCreated={() => { setEditModalOpen(false); router.refresh() }}
+        onDelete={handleDeleteClick}
+        deleting={deleting}
+      />
     </div>
   )
 }

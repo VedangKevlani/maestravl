@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ConfirmDialog from './ConfirmDialog'
 
 export default function TripCardMenu({ tripId, tripTitle, redirectTo }: { tripId: string; tripTitle: string; redirectTo?: string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -24,15 +26,17 @@ export default function TripCardMenu({ tripId, tripTitle, redirectTo }: { tripId
     }
   }, [open])
 
-  async function handleDelete(e: React.MouseEvent) {
+  function handleDeleteClick(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (!confirm(`Delete "${tripTitle}"? This removes its segments, passengers, and imported documents. This can't be undone.`)) {
-      return
-    }
+    setConfirmOpen(true)
+  }
+
+  async function handleDeleteConfirmed() {
     setDeleting(true)
     const res = await fetch(`/api/trips/${tripId}`, { method: 'DELETE' })
     setDeleting(false)
+    setConfirmOpen(false)
     if (!res.ok) {
       alert('Could not delete this trip. Please try again.')
       return
@@ -68,7 +72,7 @@ export default function TripCardMenu({ tripId, tripTitle, redirectTo }: { tripId
           <button
             type="button"
             role="menuitem"
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
             disabled={deleting}
             className="w-full text-left px-4 py-2.5 text-editorial text-red-400 hover:bg-white/5 disabled:opacity-50 transition-colors"
             style={{ fontSize: '0.85rem' }}
@@ -77,6 +81,17 @@ export default function TripCardMenu({ tripId, tripTitle, redirectTo }: { tripId
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete trip?"
+        message={`Delete "${tripTitle}"? This removes its segments, passengers, and imported documents. This can't be undone.`}
+        confirmLabel="Delete trip"
+        danger
+        loading={deleting}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   )
 }

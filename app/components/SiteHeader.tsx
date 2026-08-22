@@ -15,7 +15,7 @@ export default function SiteHeader() {
         initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8, duration: 0.6 }}
       >
         <MaestravlMark size={22} />
-        <span className="text-label text-white/78" style={{ fontSize: '0.8rem', letterSpacing: '0.16em' }}>MAESTRAVL</span>
+        <span className="text-label text-white/80" style={{ fontSize: '0.8rem', letterSpacing: '0.16em' }}>MAESTRAVL</span>
       </motion.div>
       <motion.div
         className="pointer-events-auto"
@@ -27,8 +27,9 @@ export default function SiteHeader() {
           style={{
             fontSize: '0.68rem',
             padding: '0.55rem 1.1rem',
-            border: '1px solid rgba(255,255,255,0.25)',
-            color: 'rgba(255,255,255,0.8)',
+            border: '1.5px solid var(--border, #40454e)',
+            background: 'var(--card, #1b1d22)',
+            color: 'var(--ink, #d4d7dd)',
           }}
         >
           Join Early Access

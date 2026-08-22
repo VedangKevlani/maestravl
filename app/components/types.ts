@@ -58,6 +58,7 @@ export interface PassengerDTO {
   isPrimary: boolean
   email: string | null
   phone: string | null
+  emergencyContact: string | null
 }
 
 export interface TripDTO {
@@ -68,8 +69,3 @@ export interface TripDTO {
   segments: SegmentDTO[]
 }
 
-export const TRANSPORT_ICONS: Record<string, string> = {
-  FLIGHT: '✈', TRAIN: '🚆', BUS: '🚌', TAXI: '🚖', FERRY: '⛴', CRUISE: '🚢',
-  BOAT: '🚤', HELICOPTER: '🚁', BICYCLE: '🚲', RENTAL_CAR: '🚗', WALKING: '🚶',
-  HOTEL: '🏨', RESTAURANT: '🍽', EXCURSION: '🗺', OTHER: '•',
-}

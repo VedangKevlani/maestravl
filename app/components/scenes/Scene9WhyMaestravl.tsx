@@ -37,7 +37,7 @@ function FeatureCard({ feature, index, beatProgress }: { feature: typeof FEATURE
 
   return (
     <motion.div className="glass-card p-8" style={{ opacity, y }}>
-      <div className="w-8 h-px mb-6" style={{ background: 'var(--ocean-bright)' }} />
+      <div className="w-8 h-px mb-6" style={{ background: 'var(--accent, #8fc180)' }} />
       <h3 className="text-display text-white mb-4" style={{ fontSize: '1.4rem' }}>{feature.title}</h3>
       <p className="text-editorial text-white/58" style={{ fontSize: '0.95rem' }}>{feature.desc}</p>
     </motion.div>
@@ -51,13 +51,13 @@ export default function Scene9WhyMaestravl({ progress }: SceneProps) {
   const featuresBeat = useTransform(progress, [0.5, 1], [0, 1])
 
   return (
-    <div className="absolute inset-0 overflow-hidden" style={{ background: 'var(--charcoal)' }}>
+    <div className="absolute inset-0 overflow-hidden" style={{ background: 'linear-gradient(135deg, #0a0b0e 0%, #12151c 60%, #1b1812 100%)' }}>
       {/* Beat A: stats */}
       <motion.div className="absolute inset-0 flex flex-col items-center justify-center px-6" style={{ opacity: statsOpacity }}>
         <p className="text-label text-white/40 mb-4">why maestravl wins</p>
         <h2 className="text-display text-white text-center mb-10" style={{ fontSize: 'clamp(2rem, 6vw, 4.5rem)', lineHeight: 1 }}>
           Coordination<br />
-          <span style={{ color: 'var(--sand)' }}>without chaos.</span>
+          <span style={{ color: 'var(--accent, #8fc180)' }}>without chaos.</span>
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl w-full">
           {STATS.map((stat, i) => (

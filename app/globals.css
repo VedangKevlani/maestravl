@@ -1,22 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&display=swap');
 
 @import 'tailwindcss';
 @source '../app/**/*.{ts,tsx}';
 
 :root {
-  --charcoal: #141414;
-  --charcoal-mid: #1e1e1e;
-  --charcoal-light: #2a2a2a;
-  --warm-white: #f5f3ef;
-  --warm-white-dim: #e8e4dc;
-  --ocean: #1a4a6e;
-  --ocean-light: #2a6ea8;
-  --ocean-bright: #4aa0d8;
-  --sand: #c8b89a;
-  --sand-light: #e2d5c0;
-  --emerald: #2d6a4f;
-  --emerald-light: #52b788;
-  --amber: #d4a853;
+  --charcoal: #0a0b0e;
+  --charcoal-mid: #14161c;
+  --charcoal-light: #1b1d22;
+  --warm-white: #eef0f3;
+  --warm-white-dim: #d4d7dd;
+  --ocean: #1a3a5c;
+  --ocean-light: #2b5580;
+  --ocean-bright: #6f9ad9;
+  --sand: #cfe0c8;
+  --sand-light: #e8f2e5;
+  --emerald: #12271c;
+  --emerald-light: #8fc180;
+  --amber: #e0aa4e;
 }
 
 @keyframes fadeInText {
@@ -36,26 +36,27 @@
 
   html {
     scroll-behavior: auto; /* Lenis handles this */
-    background: var(--charcoal);
-    color: var(--warm-white);
+    background: var(--page);
+    color: var(--ink);
   }
 
   body {
-    font-family: 'Manrope', system-ui, sans-serif;
-    background: var(--charcoal);
-    color: var(--warm-white);
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--page);
+    color: var(--ink);
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
   }
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: var(--charcoal); }
-::-webkit-scrollbar-thumb { background: var(--charcoal-light); border-radius: 2px; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--page); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-/* Typography scale */
+/* Typography scale — Display text uses Manrope weight 800 */
 .text-display {
   font-family: 'Manrope', sans-serif;
   font-weight: 800;
@@ -64,18 +65,18 @@
 }
 
 .text-editorial {
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 300;
-  letter-spacing: 0.01em;
-  line-height: 1.6;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.55;
 }
 
 .text-label {
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
 }
 
 /* Cinematic video backdrop */
@@ -88,12 +89,13 @@
   will-change: transform;
 }
 
-/* Glass card */
+/* Glass card — frontend system token based */
 .glass-card {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: rgba(27, 29, 34, 0.78);
+  backdrop-filter: blur(16px);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 /* Grain overlay */
@@ -158,3 +160,204 @@
   0% { transform: scale(0); opacity: 0.8; }
   100% { transform: scale(4); opacity: 0; }
 }
+
+/* App-shell tokens — used by app/styles/appShell.module.css. Kept here
+   rather than inside the module file itself: css-loader's "pure" mode
+   rejects a *.module.css file whose top-level selectors are entirely
+   global (even :global(:root) doesn't satisfy it), so page-wide custom
+   properties have to live in a non-module stylesheet. */
+:root {
+  --shell-ink: #d4d7dd;
+  --shell-muted: #9aa3b0;
+  --shell-faint: #727b89;
+  --shell-border: #40454e;
+  --shell-card: #1b1d22;
+  --shell-page: #1b1d22;
+  --shell-accent: #8fc180;
+  --shell-hover: #25282e;
+  --shell-danger: #e88a7d;
+  --shell-radius-md: 14px;
+  --shell-radius-sm: 10px;
+  --shell-shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+/* Auth-page tokens — used by app/styles/auth.module.css. Same reason as
+   the shell tokens above. */
+:root {
+  --auth-ink: #d4d7dd;
+  --auth-muted: #9aa3b0;
+  --auth-faint: #727b89;
+  --auth-border: #40454e;
+  --auth-border-soft: #2f333b;
+  --auth-card: #21232b;
+  --auth-page: #0a0b0e;
+  --auth-accent: #8fc180;
+  --auth-black: #eef0f3;
+  --auth-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --auth-danger: #e88a7d;
+  --auth-danger-bg: #2b1613;
+  --auth-danger-border: #5c2c26;
+  --auth-disabled-bg: #282b31;
+  --auth-disabled-ink: #5b6069;
+  --auth-radius-lg: 20px;
+  --auth-radius-sm: 10px;
+  --auth-radius-pill: 999px;
+  --auth-green-bg: #12271c;
+  --auth-green: #3ecb84;
+}
+
+/* App-page design tokens — ported directly from new-frontend-src/common.css.
+   Global (not module-scoped) because every (app) page needs them, not just
+   one component. Unprefixed to match the static frontend's actual variable
+   names, since page bodies (dashboard, trip, etc.) reference these
+   directly when rebuilt against the static design — unlike the --shell
+   and --auth prefixed tokens above, which are wrapper-specific and
+   already renamed. */
+:root {
+  --ink: #d4d7dd;
+  --muted: #9aa3b0;
+  --faint: #727b89;
+  --border: #40454e;
+  --border-soft: #2f333b;
+  --card: #1b1d22;
+  --page: #1b1d22;
+  --accent: #8fc180;
+  --accent-2: #7fae70;
+  --green: #3ecb84;
+  --status-blue: #6f9ad9;
+  --green-bg: #12271c;
+  --amber: #e0aa4e;
+  --amber-bg: #2c2312;
+  --black: #eef0f3;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-app: 0 1px 3px rgba(0, 0, 0, 0.3), 0 20px 48px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --hover: #25282e;
+  --hover-2: #282b31;
+  --avatar-bg: #7fae70;
+  --avatar-ink: #0f1218;
+  --pass-avatar-bg: #25282e;
+  --accent-tint-bg: #182016;
+  --accent-tint-ink: #cfe0c8;
+  --accent-tint-ink2: #8fc180;
+  --green-tint-ink: #a9e8c4;
+  --amber-tint-ink: #f0cf8a;
+  --danger: #e88a7d;
+  --danger-bg: #2b1613;
+  --danger-bg-hover: #331a17;
+  --danger-border: #5c2c26;
+  --disabled-bg: #282b31;
+  --overlay-scrim: rgba(0, 0, 0, 0.65);
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+}
+
+/* =========================================================
+   TOOLTIP SYSTEM — hover descriptions for UI elements.
+   Uses data-tip attribute with CSS :hover + ::before/::after.
+   ========================================================= */
+
+[data-tip] {
+  position: relative;
+}
+[data-tip]::before,
+[data-tip]::after {
+  pointer-events: none;
+  position: absolute;
+  opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 9999;
+  transform: translateY(4px);
+}
+[data-tip]::before {
+  content: attr(data-tip);
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #1e2027;
+  color: #e2e5ea;
+  font-family: 'Manrope', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  padding: 6px 10px;
+  border-radius: 8px;
+  width: max-content;
+  min-width: 140px;
+  max-width: 240px;
+  white-space: normal;
+  text-align: center;
+  border: 1px solid #3a3f49;
+  box-shadow: 0 4px 18px rgba(0,0,0,.55);
+  letter-spacing: -.01em;
+}
+[data-tip]::after {
+  content: '';
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border: 5px solid transparent;
+  border-top-color: #3a3f49;
+}
+[data-tip]:hover::before,
+[data-tip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+[data-tip]:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
+[data-tip][data-tip-pos="right"]::before {
+  left: 0;
+  right: auto;
+  transform: translateY(4px);
+}
+[data-tip][data-tip-pos="right"]:hover::before {
+  transform: translateY(0);
+}
+[data-tip][data-tip-pos="right"]::after {
+  left: 16px;
+  transform: translateY(4px);
+}
+[data-tip][data-tip-pos="right"]:hover::after {
+  transform: translateY(0);
+}
+[data-tip][data-tip-pos="left"]::before {
+  left: auto;
+  right: 0;
+  transform: translateY(4px);
+}
+[data-tip][data-tip-pos="left"]:hover::before {
+  transform: translateY(0);
+}
+[data-tip][data-tip-pos="left"]::after {
+  left: auto;
+  right: 16px;
+  transform: translateY(4px);
+}
+[data-tip][data-tip-pos="left"]:hover::after {
+  transform: translateY(0);
+}
+[data-tip][data-tip-pos="bottom"]::before {
+  top: calc(100% + 8px);
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+}
+[data-tip][data-tip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0);
+}
+[data-tip][data-tip-pos="bottom"]::after {
+  top: calc(100% + 2px);
+  bottom: auto;
+  left: 50%;
+  border-top-color: transparent;
+  border-bottom-color: #3a3f49;
+  transform: translateX(-50%) translateY(-4px);
+}
+[data-tip][data-tip-pos="bottom"]:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
+

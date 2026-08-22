@@ -10,6 +10,10 @@ export const metadata: Metadata = {
     description: 'When travel changes, Maestravl coordinates everything.',
     type: 'website',
   },
+  icons: [
+    { rel: 'icon', url: '/maestravl-logo.png' },
+    { rel: 'apple-touch-icon', url: '/maestravl-logo.png' },
+  ],
 }
 
 export default function RootLayout({
