@@ -31,8 +31,10 @@ interface Props {
   /** Rendered directly below the live Segment Preview, above the rest of
    *  the form fields — e.g. the "monitor this segment" checkbox and
    *  Linked Passengers picker, which belong with the preview at the top
-   *  of the modal rather than buried under all the input fields. */
-  afterPreview?: React.ReactNode
+   *  of the modal rather than buried under all the input fields.
+   *  Receives the form's own monitor-enabled state/setter so the checkbox
+   *  it renders is actually wired into what gets submitted. */
+  afterPreview?: (monitor: { enabled: boolean; setEnabled: (v: boolean) => void }) => React.ReactNode
 }
 
 // Splits an ISO datetime into the separate <input type="date"> /
@@ -107,6 +109,7 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
   const [price, setPrice] = useState(segment?.price != null ? String(segment.price) : '')
   const [currency, setCurrency] = useState(segment?.currency ?? 'USD')
   const [notes, setNotes] = useState(segment?.notes ?? '')
+  const [monitorEnabled, setMonitorEnabled] = useState(segment ? segment.monitoring?.status !== 'PAUSED' : true)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -154,6 +157,7 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
       price: price ? parseFloat(price) : empty,
       notes: notes.trim() || empty,
       passengerIds,
+      monitorEnabled,
     }
 
     const res = await fetch(
@@ -178,6 +182,49 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
 
   const prof = getFieldProfile(transportType)
 
+  // Derived booleans from the field profile, used to show/hide sections
+  const hasRoute = prof.hasRoute
+  const hasArrivalTime = prof.arrivalTimeLabel !== null
+  const hasTerminalGate = hasRoute && (prof as any).hasTerminalGate
+  const hasSeatCabin = hasRoute && (prof as any).hasSeatCabin
+  // Hotel: hasRoute=false, no seat/cabin — but it has a room type field
+  const isHotel = transportType === 'HOTEL'
+  // Whether to show the "Additional details" block in the Provider tab at all
+  const hasExtraDetails = hasTerminalGate || hasSeatCabin || isHotel
+
+  // Location labels driven by the profile
+  const originLabel = hasRoute
+    ? (prof as any).departureLocationLabel
+    : (prof as any).singleLocationLabel
+  const destLabel = hasRoute ? (prof as any).arrivalLocationLabel : null
+  const depTimeLabel = prof.departureTimeLabel
+  const arrTimeLabel = prof.arrivalTimeLabel
+
+  // Code field labels — only present on hasRoute profiles
+  const depCodeLabel = hasRoute ? (prof as any).departureCodeLabel : null
+  const arrCodeLabel = hasRoute ? (prof as any).arrivalCodeLabel : null
+
+  // Per-tab completion — drives the dotcheck state (filled circle vs empty circle)
+  // Transport tab: a type is always selected (defaults to FLIGHT), so always complete
+  const transportComplete = true
+  // Date & Time tab: origin location + departure date + time are required;
+  // destination is also required for route types
+  const datetimeComplete =
+    depLocation.trim() !== '' &&
+    depDate.trim() !== '' &&
+    depTime.trim() !== '' &&
+    (!hasRoute || arrLocation.trim() !== '')
+  // Provider tab: provider name is the only required field
+  const providerComplete = provider.trim() !== ''
+
+  // Preview address strings
+  const previewOrigin = hasRoute
+    ? depCode ? `${depCode}${depLocation ? ` — ${depLocation}` : ''}` : depLocation
+    : depLocation
+  const previewDest = hasRoute
+    ? arrCode ? `${arrCode}${arrLocation ? ` — ${arrLocation}` : ''}` : arrLocation
+    : ''
+
   return (
     <form onSubmit={onSubmit}>
       <div className={styles.fieldLabel} style={{ fontSize: '15px', marginBottom: '8px' }}>
@@ -191,19 +238,19 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
         depDate={depDate}
         depTime={depTime}
         arrTime={arrTime}
-        originAddr={prof.hasRoute ? (depCode ? `${depCode}${depLocation ? ` — ${depLocation}` : ''}` : depLocation) : depLocation}
-        destAddr={prof.hasRoute ? (arrCode ? `${arrCode}${arrLocation ? ` — ${arrLocation}` : ''}` : arrLocation) : ''}
+        originAddr={previewOrigin}
+        destAddr={previewDest}
         seat={seat}
         cabin={cabin}
         room={roomType}
         tz={timezone || (autoTimezone ? Intl.DateTimeFormat().resolvedOptions().timeZone : '')}
-        hasArrival={prof.arrivalTimeLabel !== null}
-        addrCount={prof.hasRoute ? 2 : 1}
-        gateSeatCabin={(prof as any).hasTerminalGate || (prof as any).hasSeatCabin}
-        roomField={!(prof as any).hasSeatCabin && !(prof as any).hasTerminalGate}
+        hasArrival={hasArrivalTime}
+        addrCount={hasRoute ? 2 : 1}
+        gateSeatCabin={hasTerminalGate || hasSeatCabin}
+        roomField={isHotel}
       />
 
-      {afterPreview}
+      {afterPreview?.({ enabled: monitorEnabled, setEnabled: setMonitorEnabled })}
 
 
       <div className={styles.fieldLabel} style={{ fontSize: '15px', marginBottom: '2px', marginTop: '24px' }}>
@@ -215,26 +262,32 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
       <div className={styles.subtabs}>
         <button
           type="button"
-          className={`${styles.subtab} ${activeTab === 'transport' ? styles.active : ''}`}
+          className={`${styles.subtab} ${activeTab === 'transport' ? styles.active : ''} ${transportComplete ? styles.complete : ''}`}
           onClick={() => setActiveTab('transport')}
         >
-          <span className={styles.dotcheck}>{activeTab === 'transport' ? <Check size={11} /> : null}</span>
+          <span className={`${styles.dotcheck} ${transportComplete ? styles.dotchecked : ''}`}>
+            {transportComplete ? <Check size={9} /> : null}
+          </span>
           Transportation
         </button>
         <button
           type="button"
-          className={`${styles.subtab} ${activeTab === 'datetime' ? styles.active : ''}`}
+          className={`${styles.subtab} ${activeTab === 'datetime' ? styles.active : ''} ${datetimeComplete ? styles.complete : ''}`}
           onClick={() => setActiveTab('datetime')}
         >
-          <span className={styles.dotcheck}>{activeTab === 'datetime' ? <Check size={11} /> : null}</span>
+          <span className={`${styles.dotcheck} ${datetimeComplete ? styles.dotchecked : ''}`}>
+            {datetimeComplete ? <Check size={9} /> : null}
+          </span>
           Date & Time
         </button>
         <button
           type="button"
-          className={`${styles.subtab} ${activeTab === 'provider' ? styles.active : ''}`}
+          className={`${styles.subtab} ${activeTab === 'provider' ? styles.active : ''} ${providerComplete ? styles.complete : ''}`}
           onClick={() => setActiveTab('provider')}
         >
-          <span className={styles.dotcheck}>{activeTab === 'provider' ? <Check size={11} /> : null}</span>
+          <span className={`${styles.dotcheck} ${providerComplete ? styles.dotchecked : ''}`}>
+            {providerComplete ? <Check size={9} /> : null}
+          </span>
           Provider & Additional Info
         </button>
       </div>
@@ -322,22 +375,40 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
             Select this segment's scheduled Date & Time:
           </span>
 
-          <div className={styles.grid2}>
+          {/* Origin / single location field — always shown */}
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {originLabel} <span style={{ color: 'var(--amber)' }}>*</span>
+            </span>
+            <input
+              type="text"
+              className={styles.textInput}
+              placeholder={hasRoute ? 'e.g. JFK Airport / Florida Station' : 'e.g. Grand Hyatt New York'}
+              value={depLocation}
+              onChange={(e) => setDepLocation(e.target.value)}
+            />
+          </div>
+
+          {/* Origin airport/station code — only for route types with a code label */}
+          {depCodeLabel && (
             <div className={styles.field}>
-              <span className={styles.fieldLabel}>
-                Pickup / Origin Location <span style={{ color: 'var(--amber)' }}>*</span>
-              </span>
+              <span className={styles.fieldLabel}>{depCodeLabel}</span>
               <input
                 type="text"
                 className={styles.textInput}
-                placeholder="e.g. JFK Airport / Florida Station"
-                value={depLocation}
-                onChange={(e) => setDepLocation(e.target.value)}
+                placeholder="e.g. KIN"
+                value={depCode}
+                onChange={(e) => setDepCode(e.target.value.toUpperCase())}
+                maxLength={4}
               />
             </div>
+          )}
+
+          {/* Destination field — only for route types (hasRoute = true) */}
+          {hasRoute && destLabel && (
             <div className={styles.field}>
               <span className={styles.fieldLabel}>
-                Dropoff / Destination Location <span style={{ color: 'var(--amber)' }}>*</span>
+                {destLabel} <span style={{ color: 'var(--amber)' }}>*</span>
               </span>
               <input
                 type="text"
@@ -347,12 +418,27 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
                 onChange={(e) => setArrLocation(e.target.value)}
               />
             </div>
-          </div>
+          )}
+
+          {/* Destination airport/station code — only for route types with a code label */}
+          {hasRoute && arrCodeLabel && (
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>{arrCodeLabel}</span>
+              <input
+                type="text"
+                className={styles.textInput}
+                placeholder="e.g. MIA"
+                value={arrCode}
+                onChange={(e) => setArrCode(e.target.value.toUpperCase())}
+                maxLength={4}
+              />
+            </div>
+          )}
 
           <div className={styles.grid2}>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>
-                Departure Date <span style={{ color: 'var(--amber)' }}>*</span>
+                {depTimeLabel ? `${depTimeLabel} — Date` : 'Departure Date'} <span style={{ color: 'var(--amber)' }}>*</span>
               </span>
               <input
                 type="date"
@@ -363,7 +449,7 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
             </div>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>
-                Departure Time <span style={{ color: 'var(--amber)' }}>*</span>
+                {depTimeLabel ? `${depTimeLabel} — Time` : 'Departure Time'} <span style={{ color: 'var(--amber)' }}>*</span>
               </span>
               <input
                 type="time"
@@ -374,26 +460,29 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
             </div>
           </div>
 
-          <div className={styles.grid2}>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Arrival Date</span>
-              <input
-                type="date"
-                className={styles.textInput}
-                value={arrDate}
-                onChange={(e) => setArrDate(e.target.value)}
-              />
+          {/* Arrival row — hidden entirely when arrivalTimeLabel is null (e.g. Restaurant) */}
+          {hasArrivalTime && arrTimeLabel && (
+            <div className={styles.grid2}>
+              <div className={styles.field}>
+                <span className={styles.fieldLabel}>{arrTimeLabel} — Date</span>
+                <input
+                  type="date"
+                  className={styles.textInput}
+                  value={arrDate}
+                  onChange={(e) => setArrDate(e.target.value)}
+                />
+              </div>
+              <div className={styles.field}>
+                <span className={styles.fieldLabel}>{arrTimeLabel} — Time</span>
+                <input
+                  type="time"
+                  className={styles.textInput}
+                  value={arrTime}
+                  onChange={(e) => setArrTime(e.target.value)}
+                />
+              </div>
             </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Arrival Time</span>
-              <input
-                type="time"
-                className={styles.textInput}
-                value={arrTime}
-                onChange={(e) => setArrTime(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
           <div className={styles.field}>
             <span className={styles.fieldLabel}>My Timezone</span>
@@ -450,46 +539,90 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
             </div>
           </div>
 
-          <span className={styles.fieldLabel} style={{ fontSize: '13px', marginTop: '12px', marginBottom: '16px' }}>
-            Additional details about this segment:
-          </span>
+          {/* Additional details — only shown when the transport type uses gate/seat/cabin or room */}
+          {hasExtraDetails && (
+            <>
+              <span className={styles.fieldLabel} style={{ fontSize: '13px', marginTop: '12px', marginBottom: '16px' }}>
+                Additional details about this segment:
+              </span>
 
-          <div className={styles.grid3}>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Airport Gate / Track</span>
-              <input
-                type="text"
-                className={styles.textInput}
-                placeholder="e.g. Gate B12"
-                value={depGate}
-                onChange={(e) => setDepGate(e.target.value)}
-              />
-            </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Seat</span>
-              <input
-                type="text"
-                className={styles.textInput}
-                placeholder="e.g. 12A"
-                value={seat}
-                onChange={(e) => setSeat(e.target.value)}
-              />
-            </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Cabin / Class</span>
-              <select
-                className={styles.textInput}
-                value={cabin}
-                onChange={(e) => setCabin(e.target.value)}
-              >
-                <option value="">Select an option</option>
-                <option value="Economy">Economy</option>
-                <option value="Premium Economy">Premium Economy</option>
-                <option value="Business">Business</option>
-                <option value="First">First</option>
-              </select>
-            </div>
-          </div>
+              {/* Gate / Seat / Cabin — flights, trains, buses, cruise, etc. */}
+              {(hasTerminalGate || hasSeatCabin) && (
+                <div className={styles.grid3}>
+                  {hasTerminalGate && (
+                    <div className={styles.field}>
+                      <span className={styles.fieldLabel}>
+                        {transportType === 'FLIGHT' ? 'Airport Gate' : 'Gate / Track / Platform'}
+                      </span>
+                      <input
+                        type="text"
+                        className={styles.textInput}
+                        placeholder="e.g. Gate B12"
+                        value={depGate}
+                        onChange={(e) => setDepGate(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {hasSeatCabin && (
+                    <>
+                      <div className={styles.field}>
+                        <span className={styles.fieldLabel}>Seat</span>
+                        <input
+                          type="text"
+                          className={styles.textInput}
+                          placeholder="e.g. 12A"
+                          value={seat}
+                          onChange={(e) => setSeat(e.target.value)}
+                        />
+                      </div>
+                      <div className={styles.field}>
+                        <span className={styles.fieldLabel}>Cabin / Class</span>
+                        <select
+                          className={styles.textInput}
+                          value={cabin}
+                          onChange={(e) => setCabin(e.target.value)}
+                        >
+                          <option value="">Select an option</option>
+                          <option value="Economy">Economy</option>
+                          <option value="Premium Economy">Premium Economy</option>
+                          <option value="Business">Business</option>
+                          <option value="First">First</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Terminal — flights only */}
+              {hasTerminalGate && transportType === 'FLIGHT' && (
+                <div className={styles.field}>
+                  <span className={styles.fieldLabel}>Departure Terminal</span>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    placeholder="e.g. Terminal 4"
+                    value={depTerminal}
+                    onChange={(e) => setDepTerminal(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Room type — hotels only */}
+              {isHotel && (
+                <div className={styles.field}>
+                  <span className={styles.fieldLabel}>Room Type</span>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    placeholder="e.g. King Suite, Double Queen"
+                    value={roomType}
+                    onChange={(e) => setRoomType(e.target.value)}
+                  />
+                </div>
+              )}
+            </>
+          )}
 
           <div className={styles.grid2}>
             <div className={styles.field}>
@@ -530,7 +663,7 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
       {error && <div className={styles.error}>{error}</div>}
 
       <div className={styles.footer}>
-        <button type="submit" disabled={submitting} className={styles.primaryBtn}>
+        <button type="submit" disabled={submitting || !datetimeComplete || !providerComplete} className={styles.primaryBtn}>
           {isEditing ? (submitting ? 'Saving…' : 'Save Changes') : (submitting ? 'Adding…' : '+ Add Segment To Trip')}
         </button>
       </div>

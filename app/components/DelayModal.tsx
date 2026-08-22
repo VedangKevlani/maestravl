@@ -32,12 +32,12 @@ export default function DelayModal({ segmentId, tripId, isOpen, onClose }: Props
 
     const dateTimeISO = new Date(`${newDate}T${newTime}`).toISOString()
 
-    const res = await fetch(`/api/trips/${tripId}/segments/${segmentId}`, {
-      method: 'PATCH',
+    const res = await fetch(`/api/segments/${segmentId}/report-disruption`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         status: 'DELAYED',
-        departureTime: dateTimeISO,
+        newDepartureTime: dateTimeISO,
       }),
     })
 

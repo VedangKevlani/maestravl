@@ -49,8 +49,11 @@ function isMonitoringComplete(status: MonitoringCheckStatus, departureTime: Date
   return Boolean(departureTime && Date.now() - departureTime.getTime() > STALE_AFTER_DEPARTURE_MS)
 }
 
-/** Called right after a segment is saved — sets up (or refreshes) its MonitoringRecord. */
-export async function initializeMonitoringForSegment(segmentId: string) {
+/** Called right after a segment is saved — sets up (or refreshes) its MonitoringRecord.
+ *  `enabled` reflects the user's "I want Maestro to actively monitor this segment"
+ *  choice: false forces PAUSED regardless of adapter availability; true/undefined
+ *  falls back to the previous configured-adapter check. */
+export async function initializeMonitoringForSegment(segmentId: string, enabled?: boolean) {
   const segment = await prisma.segment.findUnique({ where: { id: segmentId } })
   if (!segment) return null
 
@@ -70,6 +73,7 @@ export async function initializeMonitoringForSegment(segmentId: string) {
 
   const trackingKey = adapter?.buildTrackingKey(monitorable) ?? null
   const configured = Boolean(adapter?.isConfigured())
+  const resolvedStatus = enabled === false ? 'PAUSED' : (configured ? 'ACTIVE' : 'NOT_CONFIGURED')
 
   const record = await prisma.monitoringRecord.upsert({
     where: { segmentId },
@@ -77,19 +81,19 @@ export async function initializeMonitoringForSegment(segmentId: string) {
       segmentId,
       apiProvider: adapter?.id ?? null,
       trackingKey,
-      status: configured ? 'ACTIVE' : 'NOT_CONFIGURED',
+      status: resolvedStatus,
     },
     update: {
       apiProvider: adapter?.id ?? null,
       trackingKey,
-      status: configured ? 'ACTIVE' : 'NOT_CONFIGURED',
+      status: resolvedStatus,
     },
   })
 
   // Seed a real reading immediately rather than leaving it null until the
   // next scheduled check (up to 6h away) — segment creation is exactly when
   // a user expects to see current status, not much later.
-  if (configured) {
+  if (resolvedStatus === 'ACTIVE') {
     return runMonitoringCheck(segmentId)
   }
   return record

@@ -38,6 +38,7 @@ const UpdateSegmentSchema = z.object({
   notes: z.string().trim().max(2000).nullable().optional(),
   baggageInfo: z.string().trim().max(500).nullable().optional(),
   passengerIds: z.array(z.string()).optional(),
+  monitorEnabled: z.boolean().optional(),
 })
 
 async function findOwnedSegment(segmentId: string, userId: string) {
@@ -73,15 +74,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (key in confidenceScores) delete confidenceScores[key]
   }
 
-  const { passengerIds, ...segmentFields } = data
+  const { passengerIds, monitorEnabled, ...segmentFields } = data
   const updateData: Record<string, unknown> = { ...segmentFields, confidenceScores: JSON.stringify(confidenceScores) }
   if ('departureTime' in data) updateData.departureTime = data.departureTime ? new Date(data.departureTime) : null
   if ('arrivalTime' in data) updateData.arrivalTime = data.arrivalTime ? new Date(data.arrivalTime) : null
 
   const segment = await prisma.segment.update({ where: { id }, data: updateData })
 
-  if (data.transportType && data.transportType !== existing.transportType) {
-    await initializeMonitoringForSegment(segment.id)
+  if ((data.transportType && data.transportType !== existing.transportType) || monitorEnabled !== undefined) {
+    await initializeMonitoringForSegment(segment.id, monitorEnabled)
   }
 
   if (passengerIds) {

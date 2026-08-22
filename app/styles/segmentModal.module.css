@@ -116,6 +116,9 @@
   color: var(--ink);
   background: var(--card);
   font-family: inherit;
+  /* Force the native date/time/color pickers to render in dark mode
+     instead of the default OS light chrome */
+  color-scheme: dark;
 }
 .textInput:focus {
   outline: 2px solid rgba(63, 107, 57, 0.22);
@@ -363,4 +366,25 @@
   .pad { padding: 26px 20px 28px; }
   .subtabs { flex-wrap: wrap; gap: 16px; row-gap: 10px; }
   .subtab { padding-bottom: 10px; }
+}
+
+/* Subtab completion dot / checkmark */
+.dotcheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  flex: none;
+  color: transparent;
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+/* Filled green state — matches the screenshot: solid accent circle with white check */
+.dotchecked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0f1218;
 }

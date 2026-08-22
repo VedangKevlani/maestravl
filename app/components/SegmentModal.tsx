@@ -155,10 +155,10 @@ export default function SegmentModal({ tripId, passengers, segment, open, onClos
               onCreated()
               onClose()
             }}
-            afterPreview={
+            afterPreview={({ enabled, setEnabled }) => (
               <>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--ink)', margin: '20px 0 16px' }}>
-                  <input type="checkbox" defaultChecked={segment ? segment.monitoring?.status !== 'PAUSED' : true} />
+                  <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
                   I want Maestro to actively monitor this segment and give me updates.
                 </label>
 
@@ -267,7 +267,7 @@ export default function SegmentModal({ tripId, passengers, segment, open, onClos
                   </>
                 )}
               </>
-            }
+            )}
           />
         </div>
       </div>

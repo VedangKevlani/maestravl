@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, ChevronDown, Bell, GripVertical, Eye } from 'lucide-react'
+import { ArrowRight, ChevronDown, Bell, GripVertical, Eye, EyeOff } from 'lucide-react'
 import DelayModal from './DelayModal'
 import SegmentUpdatesModal from './SegmentUpdatesModal'
 import ConfidenceBadge from './ConfidenceBadge'
@@ -15,7 +15,6 @@ import { toLocalInputValue } from './dateInput'
 import { isUberConfigured, locationText, buildUberDeepLink, isPlausibleUberTrip } from '@/lib/uber'
 import { getFieldProfile } from './segmentFieldProfiles'
 import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
-import SegmentWorldClock from './SegmentWorldClock'
 import ConfirmDialog from './ConfirmDialog'
 import { STATUS_COPY, toneOf } from '@/lib/agents/statusCopy'
 import { isTerminalRunStatus } from '@/lib/constants'
@@ -301,18 +300,26 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   return (
     <div ref={setNodeRef} style={style} data-tour="segment-card" id={`seg-${segment.id}`} className={styles.segBlock}>
       <div className={styles.segMetaRow}>
-        <span data-tip="Maestro is actively watching this segment">
-          <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
-          LAST CHECKED: {segment.monitoring?.lastCheckedAt ? formatRelativeTime(segment.monitoring.lastCheckedAt) : 'just now'}
-        </span>
-        <span
-          className={styles.checkStatusBtn}
-          data-tip="Ask Maestro to re-check this segment's status right now"
-          onClick={handleCheckNow}
-          style={{ cursor: checking ? 'wait' : 'pointer' }}
-        >
-          {checking ? 'Checking…' : 'Check Status Now'}
-        </span>
+        {segment.monitoring?.status !== 'PAUSED' ? (
+          <span data-tip="Maestro is actively watching this segment">
+            <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
+            LAST CHECKED: {segment.monitoring?.lastCheckedAt ? formatRelativeTime(segment.monitoring.lastCheckedAt) : 'just now'}
+          </span>
+        ) : (
+          <span data-tip="Maestro is not monitoring this segment">
+            <EyeOff size={12} style={{ display: 'inline', verticalAlign: 'middle', opacity: 0.8 }} />
+          </span>
+        )}
+        {segment.monitoring?.status !== 'PAUSED' ? (
+          <span
+            className={styles.checkStatusBtn}
+            data-tip="Ask Maestro to re-check this segment's status right now"
+            onClick={handleCheckNow}
+            style={{ cursor: checking ? 'wait' : 'pointer' }}
+          >
+            {checking ? 'Checking…' : 'Check Status Now'}
+          </span>
+        ) : null}
         <div className={styles.metaSpacer} />
         <div
           className={styles.bellDot}
@@ -403,29 +410,35 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
               </span>
             </div>
 
-            {(segment.departureLocationCode || segment.arrivalLocationCode || segment.departureLocation || segment.arrivalLocation) && (
-              <div className={styles.ticketRoute}>
-                <div className={styles.ticketEndpoint}>
-                  <div className={styles.code}>{segment.departureLocationCode ?? '—'}</div>
-                  <div className={styles.place}>{segment.departureLocation ?? ''}</div>
-                  <div className={styles.time}>{segment.departureTime ? formatDateTime(segment.departureTime, segmentZones.departure) : '—'}</div>
-                  <div className={styles.tz}>{segmentZones.departure ?? ''}</div>
-                </div>
+            {(segment.departureLocationCode || segment.arrivalLocationCode || segment.departureLocation || segment.arrivalLocation) && (() => {
+              const prof = getFieldProfile(segment.transportType)
+              const showCodes = prof.hasRoute && (prof as any).hasTerminalGate
+              return (
+                <div className={styles.ticketRoute}>
+                  <div className={styles.ticketEndpoint}>
+                    <div className={styles.code}>
+                      {showCodes ? (segment.departureLocationCode ?? '—') : (segment.departureLocation ?? '—')}
+                    </div>
+                    {showCodes && <div className={styles.place}>{segment.departureLocation ?? ''}</div>}
+                    <div className={styles.time}>{segment.departureTime ? formatDateTime(segment.departureTime, segmentZones.departure) : '—'}</div>
+                    <div className={styles.tz}>{segmentZones.departure ?? ''}</div>
+                  </div>
 
-                <div className={styles.ticketArrow}>
-                  <ArrowRight size={20} />
-                </div>
+                  <div className={styles.ticketArrow}>
+                    <ArrowRight size={20} />
+                  </div>
 
-                <div className={`${styles.ticketEndpoint} ${styles.ticketEndpointRight}`}>
-                  <div className={styles.code}>{segment.arrivalLocationCode ?? '—'}</div>
-                  <div className={styles.place}>{segment.arrivalLocation ?? ''}</div>
-                  <div className={styles.time}>{segment.arrivalTime ? formatDateTime(segment.arrivalTime, segmentZones.arrival) : '—'}</div>
-                  <div className={styles.tz}>{segmentZones.arrival ?? ''}</div>
+                  <div className={`${styles.ticketEndpoint} ${styles.ticketEndpointRight}`}>
+                    <div className={styles.code}>
+                      {showCodes ? (segment.arrivalLocationCode ?? '—') : (segment.arrivalLocation ?? '—')}
+                    </div>
+                    {showCodes && <div className={styles.place}>{segment.arrivalLocation ?? ''}</div>}
+                    <div className={styles.time}>{segment.arrivalTime ? formatDateTime(segment.arrivalTime, segmentZones.arrival) : '—'}</div>
+                    <div className={styles.tz}>{segmentZones.arrival ?? ''}</div>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            <SegmentWorldClock segment={segment} homeTimezone={homeTimezone} />
+              )
+            })()}
 
             {showRibbon && activeRun && (
               <div

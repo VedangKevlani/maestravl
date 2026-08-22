@@ -34,6 +34,7 @@ const CreateSegmentSchema = z.object({
   notes: z.string().trim().max(2000).optional(),
   baggageInfo: z.string().trim().max(500).optional(),
   passengerIds: z.array(z.string()).optional(),
+  monitorEnabled: z.boolean().optional(),
 })
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -93,7 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     include: { passengerLinks: { include: { passenger: true } } },
   })
 
-  await initializeMonitoringForSegment(segment.id)
+  await initializeMonitoringForSegment(segment.id, data.monitorEnabled)
 
   return NextResponse.json({ segment }, { status: 201 })
 }

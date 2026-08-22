@@ -82,7 +82,7 @@ export default function SegmentPreview(props: PreviewProps) {
         <div className={styles.ticketRoute}>
           <div className={styles.ticketEndpoint}>
             <div className={styles.code}>{props.originAddr || '—'}</div>
-            <div className={styles.place}>&nbsp;</div>
+            {props.gateSeatCabin && <div className={styles.place}>&nbsp;</div>}
             <div className={styles.time}>{formatTime12(props.depTime)}</div>
             <div className={styles.tz}>{props.tz}</div>
           </div>
@@ -95,7 +95,7 @@ export default function SegmentPreview(props: PreviewProps) {
 
               <div className={`${styles.ticketEndpoint} ${styles.ticketEndpointRight}`}>
                 <div className={styles.code}>{props.destAddr || '—'}</div>
-                <div className={styles.place}>&nbsp;</div>
+                {props.gateSeatCabin && <div className={styles.place}>&nbsp;</div>}
                 <div className={styles.time}>{formatTime12(props.arrTime)}</div>
                 <div className={styles.tz}>{props.tz}</div>
               </div>
