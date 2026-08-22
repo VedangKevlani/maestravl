@@ -94,7 +94,7 @@ export default function ManagePassengersModal({ tripId, passengers, open, onClos
                 onClose()
                 onAddPassenger()
               }}
-              style={{ width: '100%', border: '1.5px dashed var(--border)', background: 'transparent' }}
+              style={{ width: '100%' }}
             >
               + Add Passengers
             </button>
