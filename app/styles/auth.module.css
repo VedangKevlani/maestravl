@@ -164,6 +164,41 @@
   color: var(--auth-faint);
 }
 
+.passwordWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.passwordWrap .input {
+  padding-right: 40px;
+}
+.toggleBtn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--auth-faint);
+  cursor: pointer;
+  border-radius: var(--auth-radius-sm);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.toggleBtn:hover {
+  color: var(--auth-ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+.toggleBtn:focus-visible {
+  outline: 2px solid rgba(63, 107, 57, 0.35);
+  outline-offset: 1px;
+}
+
 .hint {
   font-size: 10.5px;
   color: var(--auth-faint);

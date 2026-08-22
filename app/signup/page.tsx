@@ -4,6 +4,7 @@ import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AuthShell from '../components/auth/AuthShell'
+import PasswordInput from '../components/auth/PasswordInput'
 import styles from '../styles/auth.module.css'
 
 export default function SignupPage() {
@@ -63,10 +64,9 @@ export default function SignupPage() {
         </div>
         <div className={styles.field}>
           <label htmlFor="password" className={styles.fieldLabel}>Password</label>
-          <input
-            id="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+          <PasswordInput
+            id="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
             value={password} onChange={(e) => setPassword(e.target.value)}
-            className={styles.input}
           />
           <div className={styles.hint}>At least 8 characters</div>
         </div>

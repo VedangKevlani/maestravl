@@ -4,6 +4,7 @@ import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import AuthShell from '../components/auth/AuthShell'
+import PasswordInput from '../components/auth/PasswordInput'
 import styles from '../styles/auth.module.css'
 
 function LoginForm() {
@@ -44,10 +45,9 @@ function LoginForm() {
             <label htmlFor="password" className={styles.fieldLabel}>Password</label>
             <Link href="/forgot-password" className={styles.forgotLink}>Forgot password?</Link>
           </div>
-          <input
-            id="password" type="password" required autoComplete="current-password" placeholder="••••••••"
+          <PasswordInput
+            id="password" required autoComplete="current-password" placeholder="••••••••"
             value={password} onChange={(e) => setPassword(e.target.value)}
-            className={styles.input}
           />
         </div>
 

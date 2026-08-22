@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Check } from 'lucide-react'
 import AuthShell from '../components/auth/AuthShell'
+import PasswordInput from '../components/auth/PasswordInput'
 import styles from '../styles/auth.module.css'
 
 function ResetPasswordForm() {
@@ -61,19 +62,17 @@ function ResetPasswordForm() {
     <form onSubmit={onSubmit} className={styles.form} noValidate>
       <div className={styles.field}>
         <label htmlFor="password" className={styles.fieldLabel}>New password</label>
-        <input
-          id="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+        <PasswordInput
+          id="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
           value={password} onChange={(e) => setPassword(e.target.value)}
-          className={styles.input}
         />
         <div className={styles.hint}>At least 8 characters</div>
       </div>
       <div className={styles.field}>
         <label htmlFor="confirmPassword" className={styles.fieldLabel}>Confirm password</label>
-        <input
-          id="confirmPassword" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••"
+        <PasswordInput
+          id="confirmPassword" required minLength={8} autoComplete="new-password" placeholder="••••••••"
           value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-          className={styles.input}
         />
       </div>
 
