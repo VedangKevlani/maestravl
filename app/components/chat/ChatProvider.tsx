@@ -3,7 +3,8 @@
 // Mounted once in app/(app)/layout.tsx, same pattern as OnboardingProvider,
 // so the popup survives client-side nav between sibling (app) routes
 // instead of remounting/closing on every page change.
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 interface ChatContextValue {
   open: boolean
@@ -17,6 +18,7 @@ const ChatContext = createContext<ChatContextValue | null>(null)
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [tripId, setTripId] = useState<string | null>(null)
+  const pathname = usePathname()
 
   // Toggling from a different trip than the one currently open re-opens
   // (rather than closes) scoped to the new trip, instead of leaving the
@@ -29,6 +31,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const close = useCallback(() => setOpen(false), [])
+
+  // The popup is scoped to a single trip, so it shouldn't survive a
+  // navigation away from that trip's page — same rule AppHeader already
+  // uses to decide whether to even show the chat icon (`tripId` from the
+  // `/^\/trips\/([^/]+)/` match on the current pathname). Without this,
+  // leaving the trip page (back to the dashboard, another trip, etc.)
+  // left a stale "Chat with Maestro" popup floating over unrelated pages.
+  useEffect(() => {
+    if (!open || !tripId) return
+    const stillOnThisTrip = pathname?.startsWith(`/trips/${tripId}`)
+    if (!stillOnThisTrip) setOpen(false)
+  }, [pathname, open, tripId])
 
   return <ChatContext.Provider value={{ open, tripId, toggle, close }}>{children}</ChatContext.Provider>
 }
