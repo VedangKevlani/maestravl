@@ -225,6 +225,38 @@ segment's time without an explicit confirm, and every autonomous step
 that *did* happen is logged as a plain-language `AgentAction` a human can
 read and audit.
 
+**Why one orchestrating agent, not several coordinating ones:** this
+pipeline is deliberately a single orchestrator calling purpose-built,
+independently-tested specialists — not a set of autonomous agents
+negotiating with each other. Multi-agent-to-agent coordination was
+considered and rejected for this workflow specifically: chaining several
+LLM-driven agents (e.g. a "contact-finder agent" talking to a
+"message-drafting agent") would add latency, cost, and a new failure mode
+(one agent misinterpreting another's output) at every hop, for a task
+where the actual hard part — cascade math, contact confidence scoring,
+template composition — has a single deterministically correct answer, not
+one that benefits from negotiation between models. The one place this
+pipeline *does* need a model is reading unstructured human language (a
+reply, a spoken question), and each of those is a single scoped call, not
+a conversation between agents.
+
+**Computational efficiency:** exactly two AI calls exist in the entire
+codebase (`replyInterpretation.ts`'s Gemini call, the voice assistant's
+Groq call), both single-purpose, both free-tier by construction (see
+`docs/DATA_SOURCES.md`) — there is no chain-of-agent-calls cost to budget
+for. The recovery pipeline itself does no polling of its own; it runs
+once per monitoring check (see "Monitoring abstraction" above) and again
+only when a real reply arrives, not on a timer.
+
+**Technical scalability:** `AgentRun.status` in the database *is* the
+run's execution state (see "Detection → orchestration pipeline" below) —
+there is no in-memory process to keep alive, so horizontal scaling is
+"run more instances of the same stateless handler," not a rearchitecture.
+The genuine current bottleneck is upstream: free-tier third-party quotas
+(Gemini ~20 req/day, AviationStack's monthly cap) are the actual ceiling
+on throughput today, not this codebase's own design — see
+`docs/DATA_SOURCES.md` for what each provider's real tier allows.
+
 **Data model** (`prisma/schema.prisma`, "Agentic recovery" section):
 `Disruption` (a detected status change worth acting on) → `AgentRun` (one
 resolution attempt, state-machine `status` from `DETECTED` through
