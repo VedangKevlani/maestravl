@@ -174,6 +174,57 @@ coordinate a fix, not just email the passenger that something changed).
 Built incrementally — this section reflects what's actually implemented,
 not the target end-state.
 
+**Agentic workflow, end to end:**
+
+```mermaid
+flowchart TD
+    subgraph DET["1. Detection — deterministic"]
+        A["Monitoring adapter check<br/>(flight / train-bus)"] --> B{"Disruptive status<br/>change?"}
+    end
+    B -->|no, routine| Z["Status-change email only<br/>(no AgentRun)"]
+    B -->|yes| C["Create Disruption row"]
+
+    subgraph ORCH["2. Orchestration — deterministic AgentRun state machine"]
+        C --> D["DETECTED"]
+        D --> E["ANALYZING<br/>dependency / impact cascade engine"]
+        E --> F{"Any segment<br/>actually affected?"}
+        F -->|none| G["COMPLETED"]
+        F -->|yes| H["CONTACTING<br/>contact discovery + provider email"]
+        H --> I["WAITING_FOR_RESPONSE<br/>or ACTION_REQUIRED"]
+    end
+
+    subgraph AI["3. Reasoning loop — the one AI step in the pipeline"]
+        I --> J["Inbound reply webhook<br/>(signature-verified)"]
+        J --> K["Gemini classifies the reply<br/>ACCEPTED / DECLINED / COUNTER_OFFER / UNCLEAR<br/>+ which proposed time was accepted"]
+        K -->|confident ACCEPTED| L["RESCHEDULING"]
+        K -->|declined or unclear| M["ACTION_REQUIRED<br/>human reviews the real reply text"]
+    end
+
+    subgraph HITL["4. Human-in-the-loop — required before anything is rewritten"]
+        L --> N{"Passenger reviews<br/>and confirms in-app"}
+        N -->|Confirm| O["CONFIRMED<br/>Segment departure/arrival actually rewritten"]
+        N -->|Not quite| M
+        I --> P["'Heard back?'<br/>manual passenger confirm"] --> O
+    end
+```
+
+Mapped to how this pipeline is usually talked about: the **agent** is the
+`AgentRun` orchestrator (`lib/agents/orchestrator.ts`) plus the specialized
+functions it calls (contact discovery, message composition, alternative
+ranking) — each independently pure/tested where possible. The
+**orchestration** is the state machine itself, resumable by construction
+(a serverless cold start or crash just leaves the run wherever it last
+got to, since `AgentRun.status` in the database *is* the execution state,
+not something held in memory). The **reasoning loop** is deliberately
+narrow — one scoped LLM call (Gemini) whose only job is reading what a
+reply *means*, not deciding what to do about it; `decideRunTransition`
+(pure, unit-tested) makes that decision. **Human-in-the-loop** gates
+appear at exactly the points where money or a passenger's schedule would
+actually change: nothing auto-books, auto-pays, or auto-rewrites a
+segment's time without an explicit confirm, and every autonomous step
+that *did* happen is logged as a plain-language `AgentAction` a human can
+read and audit.
+
 **Data model** (`prisma/schema.prisma`, "Agentic recovery" section):
 `Disruption` (a detected status change worth acting on) → `AgentRun` (one
 resolution attempt, state-machine `status` from `DETECTED` through
@@ -319,8 +370,8 @@ proposes a reschedule *with a fee* until a provider's reply is processed.
 
 **Provider replies** — two paths, both real, neither faked:
 
-- *Manual* (`app/api/agent-runs/[id]/resolve`, the "Heard back?" button in
-  `TripRecoveryStatus.tsx`): the passenger tells Maestravl themselves that
+- *Manual* (`app/api/agent-runs/[id]/resolve`, the "Heard back?" button on
+  `BoardingPass.tsx`): the passenger tells Maestravl themselves that
   a provider responded (by phone/text/whatever), with an optional note.
   Moves the run straight to `CONFIRMED` — the passenger is asserting
   resolution, not Maestravl inferring it.
@@ -341,13 +392,25 @@ proposes a reschedule *with a fee* until a provider's reply is processed.
   for what it does move to and why that's still not the same as claiming
   resolution.
 
+  **Live-verified in production, 2026-08-13** (not just unit tested): a
+  real outbound email round-tripped through a real reply, the webhook
+  correctly matched it back via the per-`Communication` Reply-To address,
+  `classifyReply` read it as `ACCEPTED`, and a human confirm actually
+  rewrote the segment's departure/arrival time. `/system-health`'s
+  `email-inbound` row reflects this ongoing (2 inbound replies on record
+  as of 2026-09-02).
+
 **Reply interpretation (`lib/agents/replyInterpretation.ts`):** the one
 deliberate exception to this codebase's "deterministic logic first, no LLM
 in the loop" rule (see the "Why no paid AI API" section above and the
 header comments on `analyze.ts`/`classify.ts`/`message.ts`) — reading what
 a reply actually *means* is genuine language understanding, not something
-a regex can do, and it reuses the same free-tier Gemini already wired for
-the voice assistant rather than adding a new dependency.
+a regex can do. Uses free-tier Gemini (`gemini-3.6-flash`, `GEMINI_API_KEY`)
+directly — this used to share the same free-tier account as the voice
+assistant, but the voice assistant has since moved to Groq (see "Voice
+assistant" below) specifically because Gemini's ~20-requests/day working
+limit couldn't cover both; reply interpretation is now Gemini's only
+consumer, so budget it accordingly if that changes again.
 
 Split pure/impure the same way `replyText.ts`/`inboundReply.ts` already
 are: `classifyReply` is the only network call (Gemini, structured JSON
@@ -363,11 +426,11 @@ is AI.
 
 Even a confident `ACCEPTED` read only reaches `RESCHEDULING`, never
 `CONFIRMED` directly — spec section 20, never claim a resolution that
-wasn't verified. `RESCHEDULING` surfaces a prompt in
-`TripRecoveryStatus.tsx` with the interpreted summary, a link to the real
-reply text (via the new `GET /api/agent-runs/[id]/communications`), and
-two buttons: "Confirm — update itinerary" or "Not quite — keep working on
-it". Only an explicit passenger confirm
+wasn't verified. `RESCHEDULING` surfaces a prompt on `BoardingPass.tsx`
+with the interpreted summary, a link to the real reply text (via
+`GET /api/agent-runs/[id]/communications`), and two buttons: "Confirm —
+update itinerary" or "Not quite — keep working on it". Only an explicit
+passenger confirm
 (`app/api/agent-runs/[id]/confirm-reschedule`) moves the run to
 `CONFIRMED` and actually rewrites the segment's `departureTime`/
 `arrivalTime` (shifted by the same delta, so trip duration stays
@@ -396,15 +459,21 @@ this codebase can ask a provider what times they actually have.
 second option ("Could you confirm whether either of these times would
 work?") rather than sending two separate asks.
 
-**Not yet built:** picking between Option A/B based on which one the
-provider actually said yes to — `classifyReply` reads intent (accepted/
-declined/counter-offer), not which specific proposed time was accepted, so
-`confirm-reschedule` always applies the primary `RescheduleRequest.requestedTime`
-regardless of whether the reply meant Option A or Option B.
+**Alternative-picking from reply content:** `classifyReply` also returns a
+`matchedTime: 'PRIMARY' | 'ALTERNATIVE' | 'NONE'` (only meaningful when
+`intent === 'ACCEPTED'`) — did the reply agree to the primary ask or the
+backup time? `lib/agents/inboundReply.ts` uses it to flip which
+`Alternative` row has `selected: true` (overriding `SEARCH_ALTERNATIVES`'s
+rank-1-selected default) before the run reaches `RESCHEDULING`.
+`confirm-reschedule` (`lib/agents/confirmReschedule.ts`) then applies
+whichever `Alternative` is actually marked `selected` for that segment,
+falling back to the plain `RescheduleRequest.requestedTime` only if a run
+was confirmed without ever going through reply interpretation at all (e.g.
+the manual "Heard back?" path).
 
 ## Ground transport suggestion ("Get an Uber there")
 
-`lib/uber.ts` + `app/components/SegmentCard.tsx` — a deep link into Uber's
+`lib/uber.ts` + `app/components/BoardingPass.tsx` — a deep link into Uber's
 own app/website with pickup/dropoff prefilled, **not a real booking**.
 Investigated actually booking through Uber's API (Riders API / Guest Rides)
 first: both are book-and-track — they only know about rides Uber itself
@@ -421,7 +490,7 @@ from Uber's developer dashboard (creating an app there is unprivileged;
 approval is only required for scopes this never uses, like actually
 requesting a ride). `isUberConfigured()` checks `NEXT_PUBLIC_UBER_CLIENT_ID`
 rather than a server-only var like every other integration in this file —
-it has to run in `SegmentCard.tsx`, a client component, and unlike a real
+it has to run in `BoardingPass.tsx`, a client component, and unlike a real
 API key the client_id isn't a secret (it's a visible query parameter in the
 link itself). `locationText()` builds pickup/dropoff from whatever
 free-text location or airport-dictionary lookup is available — Maestravl
@@ -429,7 +498,7 @@ has no coordinates for any segment, so the link is built from address text
 only, and returns `null` (no button rendered) rather than fabricating a
 location.
 
-Shown directly on a `SegmentCard` when that segment's own status is
+Shown directly on the boarding pass when that segment's own status is
 `DELAYED`/`CANCELLED` and there's a next segment with a resolvable
 departure location — pickup is this segment's arrival, dropoff is the next
 segment's departure. This is a deliberate simplification: it doesn't
@@ -444,49 +513,63 @@ segment data instead of just text.
 The exact deep-link URL format was read from Uber's own docs page as of
 2026-08, but a secondary source referenced a different path
 (`m.uber.com/ul/?action=setPickup...`) and neither was confirmed against a
-live click-through — no `client_id` was available while building this.
-Worth a manual check the first time a real key is set.
+live click-through. **Still unset/unconfirmed as of 2026-09-02** —
+`NEXT_PUBLIC_UBER_CLIENT_ID` has never been set in this deployment, so the
+feature is fully built but has never actually rendered a button in
+production. Worth a manual check the first time a real key is set.
 
 ## Passenger-facing recovery status
 
-`TripRecoveryStatus.tsx` (embedded at the top of the trip page) replaced
-an earlier version that dumped every `AgentAction` at once — per direct
-feedback, that read as a technical log in the middle of an already
-stressful situation. A later revision found the replacement itself still
-led with a *generic* status phrase (from `STATUS_COPY`) rather than the
-real latest thing that happened, with no way to verify any claim against
-the actual message sent or received. Current design:
+Split across two components since the front-end revamp (`git` history:
+`TripRecoveryStatus.tsx` and `SegmentCard.tsx` were both folded into
+`BoardingPass.tsx` — search history for "Ported from the old
+TripRecoveryStatus.tsx" if reconstructing intent from an old commit) —
+per-segment live status inline on the boarding pass itself, trip-wide
+history in a separate tab:
 
-- The banner's primary text is the latest concrete `AgentAction.description`
-  — one real thing at a time, replacing itself in place as the run
-  advances — not a canned phrase. The `STATUS_COPY` headline is demoted to
-  a small phase tag (e.g. "Contacting the provider") shown only when it
-  says something the primary text doesn't, and is the fallback text for a
-  fresh run with no actions yet or a terminal one. The panel polls
-  `GET /api/trips/[id]/activity` every ~12s (no websocket/SSE
-  infrastructure in this stack, and polling a handful of trips this
-  infrequently is cheap); the banner text is keyed on the latest action's
-  id so a genuine change remounts with a brief fade rather than a jarring
-  reflow.
-- "View messages" (headline row, and per-run inside "View all activity")
-  lazily fetches `GET /api/agent-runs/[id]/communications` — the actual
-  `Communication` rows for that run: the real email Maestravl sent, the
-  real reply it got back, rendered as plain text (never `dangerouslySetInnerHTML`
-  — reply content is untrusted, provider-supplied text). This is the
-  direct answer to "nothing to validate them": every `AgentAction`
-  description is a paraphrase, this is the source it's paraphrasing.
-- Full action history is opt-in behind "View all activity," not shown by
-  default. Once opened, only the *most recent* disruption's timeline is
-  expanded — earlier disruptions collapse into single summary rows
-  (segment, status, update count, relative time) that only expand their
-  own history when individually clicked, so a trip with several past
-  disruptions doesn't dump everything at once.
+**Per-segment status (`app/components/BoardingPass.tsx`):**
+- The recovery ribbon's primary text is the latest concrete
+  `AgentAction.description` for that segment — one real thing at a time,
+  replacing itself in place as the run advances — not a canned phrase. The
+  `STATUS_COPY` headline (`lib/agents/statusCopy.ts`) is demoted to a small
+  phase tag (e.g. "Contacting the provider") shown only when it says
+  something the primary text doesn't. The page polls/refetches on load
+  rather than websocket/SSE (no such infra in this stack).
+- **Not just the segment that was disrupted** — a run's ribbon appears on
+  every segment its recovery work has actually touched (the connecting
+  flight, the hotel it contacted), computed in
+  `app/(app)/trips/[id]/page.tsx` from `AgentAction.segmentId`/
+  `RescheduleRequest.segmentId`, not only `Disruption.segmentId`. Fixed
+  2026-09 — previously only the origin segment ever showed a ribbon, even
+  while downstream segments were actively being contacted on the
+  passenger's behalf.
+- "View messages" lazily fetches `GET /api/agent-runs/[id]/communications`
+  — the actual `Communication` rows for that run: the real email Maestravl
+  sent, the real reply it got back, rendered as plain text (never
+  `dangerouslySetInnerHTML` — reply content is untrusted, provider-supplied
+  text). This is the direct answer to "nothing to validate them": every
+  `AgentAction` description is a paraphrase, this is the source it's
+  paraphrasing.
 - "Heard back?" appears whenever a run is genuinely waiting on someone
   (`WAITING_FOR_RESPONSE`/`ACTION_REQUIRED`) — the manual-resolve escape
   hatch described above.
 - When a run reaches `RESCHEDULING` (see "Reply interpretation" above), the
-  banner is replaced by a distinct confirm/decline prompt instead of the
+  ribbon is replaced by a distinct confirm/decline prompt instead of the
   normal ticker — see that section for the full flow.
+- The boarding-pass status pill itself (SCHEDULED/DELAYED/CANCELLED) now
+  reflects `Segment.status`, which `handleDisruptionDetection`
+  (`lib/agents/detect.ts`) writes the moment a disruption is detected —
+  fixed 2026-09; previously this only ever got set at final
+  confirm-reschedule time, so the pill silently kept showing the
+  pre-disruption status for a run's entire active duration.
+
+**Trip-wide history (`app/components/TripActivityTabs.tsx`, the "Trip
+Updates" tab):** every `Disruption` + its `AgentRun`s across the whole
+trip, newest first, assembled once in `app/(app)/trips/[id]/page.tsx`
+(not paginated per segment the way the old inline panel was). Includes a
+downloadable activity-log export and an unread-update badge
+(`useUnreadNotifications.ts`/`useSegmentUnreadUpdates.ts`) so a passenger
+who's been away can tell at a glance whether anything happened.
 
 ## Trip archiving
 
@@ -552,6 +635,46 @@ real data, not a separate faked-up view of it.
   only (`SpeechRecognition`); the widget renders nothing if the browser
   doesn't support it.
 
+## Passenger SMS / WhatsApp notifications
+
+`lib/sms.ts` — Twilio's Messages API via plain `fetch` (no `twilio` npm
+dependency, same convention as every other integration in this file except
+`@google/genai`/Resend/Supabase). Exists alongside `lib/email.ts`, not
+instead of it: a passenger who's overwhelmed mid-disruption or has no
+signal may never see an email in time, so every passenger-facing
+notification site (`orchestrator.ts`'s `notifyPassengersOfImpact`,
+`monitoring/service.ts`'s status-change notifier, passenger-added) attempts
+every channel it has a usable contact for, not just the first that works.
+
+SMS and WhatsApp share Twilio's Messages API and near-identical message
+copy — only the `whatsapp:` From/To prefix differs — so `lib/sms.ts` has
+one composer per notification purpose, parameterized by channel, rather
+than duplicating each one twice. Configured independently
+(`isSmsConfigured`/`isWhatsAppConfigured`, each its own trio of env vars —
+`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` shared, `TWILIO_SMS_FROM`/
+`TWILIO_WHATSAPP_FROM` per-channel) since a deployment might only want one.
+WhatsApp additionally requires the recipient to text Twilio's sandbox join
+code once before Maestravl can message them — a Twilio sandbox constraint,
+not something this codebase can work around.
+
+**New, unconfirmed as of 2026-09-02** — both channels are configured
+(keys set) but `/system-health` shows 0 messages ever actually sent in
+this deployment; the feature has never been exercised against a real
+passenger phone number.
+
+## Onboarding tour
+
+`app/components/onboarding/` — an interactive first-login walkthrough
+(`OnboardingProvider.tsx` holds step state, `OnboardingOverlay.tsx` renders
+it, `steps.ts` is the content, `RestartTourButton.tsx` lets it be replayed
+on demand). Mounted once in `app/(app)/layout.tsx` rather than per-page —
+a shared layout doesn't remount on sibling navigation, which is what lets
+a step like "click + New Trip" survive the page change to the next step
+instead of resetting. Completion is persisted server-side
+(`POST /api/user/onboarding`, best-effort — a failed write just means the
+tour shows again next login, a fine fallback rather than a real failure
+worth surfacing) so it only auto-shows once per account, ever.
+
 ## System health
 
 `/system-health` (`app/api/system/health/route.ts` +
@@ -565,10 +688,24 @@ exists in the database that it has actually done something at least once
 `INBOUND` `Communication` row exists, not just because
 `RESEND_WEBHOOK_SECRET` is set. It never returns secret values, only
 booleans/counts/timestamps, and is gated the same as every other
-authenticated route (there's no separate admin role in this app). Train/
-bus/ferry/taxi monitoring is always reported as "not implemented," never
-as merely unconfigured, since the adapters are stubs regardless of any env
-var (see "Monitoring abstraction" above and `docs/INTEGRATION.md`).
+authenticated route (there's no separate admin role in this app).
+
+Only rental car/taxi/ferry/cruise monitoring is reported as
+`notImplemented: true` — a hardcoded `false`/`false`, never merely
+unconfigured, since those adapters are stubs regardless of any env var
+(see "Monitoring abstraction" above and `docs/INTEGRATION.md`). Train/bus
+(Transitland) is a real, confirmable integration: `configured` reflects
+`TRANSITLAND_API_KEY`, and `confirmed` requires actually parsing a stored
+`MonitoringRecord.lastKnownData` to find a real operator+route match
+(`status === 'ACTIVE'` alone just means the key is set, not that anything
+matched) — **as of 2026-09-02, `configured: true` but `confirmed: false`**,
+the key is set but no train/bus segment has ever resolved to a real match
+in this deployment (no live-data test has been run against it yet; see
+`docs/INTEGRATION.md`'s open questions on the alert JSON shape and
+`route_type` param). SMS/WhatsApp (Twilio) are in the same state —
+configured, never confirmed (0 messages sent on record) — since the
+feature is new and hasn't been exercised against a real passenger phone
+number yet.
 
 ## Known limitations (by design, for this iteration)
 
@@ -581,4 +718,21 @@ var (see "Monitoring abstraction" above and `docs/INTEGRATION.md`).
   [openflights.org](https://openflights.org/data.html) dataset without
   touching any calling code — `lookupAirport`/`lookupAirline` are the only
   entry points.
-- No live monitoring integration yet (see above).
+- Rental car / taxi / ferry / cruise monitoring has no free path
+  (researched, see "Monitoring abstraction" above and
+  `docs/INTEGRATION.md`) — a real, accepted dead end for this iteration,
+  not a deferred decision.
+- Train/bus monitoring (Transitland) and the Uber ground-transport deep
+  link are both fully built but **unverified against live data/a real
+  client_id** as of 2026-09-02 — see their own sections above and
+  `/system-health` for current status.
+- SMS/WhatsApp passenger notifications (Twilio) are built and configured
+  but have never actually sent a message in this deployment — see
+  "Passenger SMS / WhatsApp notifications" above.
+- The delay-report modal (`app/components/DelayModal.tsx`, "Report a
+  Delay") doesn't know a segment's stored `timezone` — unlike the segment
+  create/edit form (`TransportTypeForm.tsx`, fixed 2026-09), it parses the
+  new date/time in the browser's own zone. Lower-severity than the form
+  bug this pattern originally described (a manually-reported delay's exact
+  minute count matters less than a segment's canonical scheduled time),
+  but the same class of issue if it's ever revisited.
