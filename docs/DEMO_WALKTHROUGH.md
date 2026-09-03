@@ -24,6 +24,20 @@ so a judge can map what they're clicking to what's being scored.
    connecting flight or hotel a few hours later) via "+ Add Segment."
    - **Demonstrates:** implementation quality — confidence-scored field
      extraction, not just a form.
+   - **Setup note for a clean live demo:** `EMAIL_FROM` is currently
+     Resend's sandbox sender, which only delivers to the email address
+     that signed up for the Resend account (see `docs/DATA_SOURCES.md` —
+     unrelated to hosting domain, being fixed via a Resend
+     domain-verification step separately from the `maestravl.com`
+     migration). Put a real, reachable email address you control in the
+     segment's **Notes** field, formatted like a real booking confirmation
+     ("Contact: reservations@youraddress.com") — contact discovery reads
+     notes text, so this becomes the "provider contact" the agent emails,
+     and the send will actually succeed instead of failing on an
+     unreachable address. Skipping this still demonstrates everything
+     through step 2 (detection, impact analysis) — it just means step 3's
+     "View messages" and step 4's reply loop won't have a real send to
+     show.
 
 ## 2. Trigger a disruption (~1 min)
 

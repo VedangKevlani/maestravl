@@ -123,7 +123,12 @@ finer-grained crons). Rather than gamble on that, the primary trigger is
 `.github/workflows/monitoring-cron.yml` — a GitHub Actions scheduled
 workflow that `curl`s `https://maestravl.vercel.app/api/cron/monitoring`
 **every 30 minutes** with `Authorization: Bearer $CRON_SECRET`, so segments
-in the imminent tier actually get checked that often. `vercel.json` still
+in the imminent tier actually get checked that often. **This URL is
+hardcoded** — when the domain migrates to `maestravl.com` (purchased,
+DNS on Cloudflare, not yet pointed at Vercel as of this writing), this
+line must be updated to match or monitoring silently stops running with
+no error surfaced anywhere except a stale `MonitoringRecord.lastCheckedAt`
+on `/system-health`. `vercel.json` still
 declares its own cron hitting the same route as a backup, at whatever
 cadence Hobby actually permits — harmless either way, since the route only
 acts on segments whose `nextCheckAt` has passed, so redundant calls no-op

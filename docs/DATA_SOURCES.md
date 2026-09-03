@@ -47,6 +47,20 @@ unconfigured.
 | **Resend** | Outbound provider/passenger email, plus real inbound-reply detection via a signature-verified webhook | Free tier |
 | **Twilio** | SMS + WhatsApp passenger notifications (`lib/sms.ts`), alongside email, for a passenger who may not see an email in time mid-disruption | SMS: free trial credit, real per-message cost in production (opt-in). WhatsApp: free via Twilio's Sandbox (recipient must join once) |
 
+**Current real constraint on outbound email:** `EMAIL_FROM` is still Resend's
+shared sandbox sender (`onboarding@resend.dev`), which by Resend's own
+design only delivers to the email address that signed up for the Resend
+account — not arbitrary real passengers/providers. This is why every real
+send so far has deliberately gone to the team's own inbox during testing.
+It fails honestly, not silently: `lib/email.ts` throws on a rejected send,
+and `orchestrator.ts` catches it and logs the `Communication`/`AgentAction`
+as `FAILED`, never a fake success. **Not caused by Vercel hosting** —
+purely a Resend sending-domain limitation. Fix in progress: the team is
+migrating to `maestravl.com` (already purchased, DNS on Cloudflare, not
+yet pointed at Vercel), after which verifying that domain with Resend
+(SPF/DKIM records) and updating `EMAIL_FROM` unlocks real delivery to any
+recipient. Two independent steps, not automatic on domain migration alone.
+
 ## Platform / infrastructure
 
 | Service | Used for |
