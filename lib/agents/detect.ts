@@ -74,6 +74,17 @@ export async function handleDisruptionDetection(
     },
   })
 
+  // classifyDisruption only ever returns non-null for these two
+  // MonitoringCheckStatus values, so result.status is exactly the Segment
+  // status vocabulary already used elsewhere (confirmReschedule.ts,
+  // report-disruption's manual path). Without this, the boarding-pass pill
+  // kept showing the segment's pre-disruption status for the entire active
+  // recovery run — found via live testing 2026-08-12/13.
+  await prisma.segment.update({
+    where: { id: segment.id },
+    data: { status: result.status },
+  })
+
   await startAgentRun(disruption.id)
   return disruption
 }

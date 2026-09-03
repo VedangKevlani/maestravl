@@ -87,6 +87,46 @@ export function resolveSegmentZones(segment: LocatableSegment): { departure: str
   }
 }
 
+/** Offset (in minutes, UTC minus zone) `timeZone` was at when `instant` occurred — e.g. 300 for America/New_York (EST). */
+function timezoneOffsetMinutes(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  const asUTC = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
+  return (asUTC - instant.getTime()) / 60_000
+}
+
+/**
+ * Parses a `<input type="date">` + `<input type="time">` pair as wall-clock
+ * time *in `timeZone`* (rather than the browser/server's own zone, which is
+ * what plain `new Date(dateStr + 'T' + timeStr)` silently does) — the actual
+ * UTC instant returned is correct regardless of what zone this code happens
+ * to run in. Falls back to the runtime's own zone when `timeZone` is null
+ * (e.g. neither manually entered nor auto-detected).
+ *
+ * Two-pass DST correction: the zone's UTC offset can differ right around a
+ * DST transition depending on which instant you ask it for, so the first
+ * pass's offset (computed as if the input were already UTC) is used to get
+ * close, then re-queried at that corrected instant for the real answer —
+ * same approach date-fns-tz/luxon use internally.
+ */
+export function zonedDateTimeToUtc(dateStr: string, timeStr: string, timeZone: string | null): Date {
+  const naiveUTC = new Date(`${dateStr}T${timeStr}:00Z`)
+  if (!timeZone) return naiveUTC
+  const offset1 = timezoneOffsetMinutes(naiveUTC, timeZone)
+  const guess = new Date(naiveUTC.getTime() - offset1 * 60_000)
+  const offset2 = timezoneOffsetMinutes(guess, timeZone)
+  return new Date(naiveUTC.getTime() - offset2 * 60_000)
+}
+
 export type ArrivalHourClass = 'LATE_NIGHT' | 'EARLY_MORNING' | 'NORMAL'
 
 /**

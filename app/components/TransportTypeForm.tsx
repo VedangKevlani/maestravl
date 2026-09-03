@@ -21,6 +21,7 @@ import styles from '../styles/segmentModal.module.css'
 import SegmentPreview from './SegmentPreview'
 import { getFieldProfile } from './segmentFieldProfiles'
 import { toLocalInputValue } from './dateInput'
+import { zonedDateTimeToUtc } from '@/lib/dateFormat'
 import type { SegmentDTO } from './types'
 
 interface Props {
@@ -119,17 +120,25 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
     setSubmitting(true)
     setError(null)
 
+    // The zone this segment's date/time inputs are actually being entered
+    // in — same fallback the submitted `timezone` field below uses. Without
+    // this, the picked/typed zone was stored as metadata but never actually
+    // affected how the date/time inputs got parsed, silently anchoring
+    // every departure/arrival to the browser or server's own zone instead
+    // (found via live testing 2026-08-12/13).
+    const effectiveTimezone = timezone.trim() || (autoTimezone ? Intl.DateTimeFormat().resolvedOptions().timeZone : null)
+
     let departureDateTimeISO: string | undefined = undefined
     if (depDate) {
       const timeStr = depTime || '00:00'
-      const d = new Date(`${depDate}T${timeStr}`)
+      const d = zonedDateTimeToUtc(depDate, timeStr, effectiveTimezone)
       if (!isNaN(d.getTime())) departureDateTimeISO = d.toISOString()
     }
 
     let arrivalDateTimeISO: string | undefined = undefined
     if (arrDate) {
       const timeStr = arrTime || '00:00'
-      const d = new Date(`${arrDate}T${timeStr}`)
+      const d = zonedDateTimeToUtc(arrDate, timeStr, effectiveTimezone)
       if (!isNaN(d.getTime())) arrivalDateTimeISO = d.toISOString()
     }
 

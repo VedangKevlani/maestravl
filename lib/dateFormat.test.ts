@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyZoneLabel, formatFriendlyTime, formatDuration, resolveSegmentZones, classifyArrivalHour } from './dateFormat'
+import { friendlyZoneLabel, formatFriendlyTime, formatDuration, resolveSegmentZones, classifyArrivalHour, zonedDateTimeToUtc } from './dateFormat'
 
 describe('friendlyZoneLabel', () => {
   it('derives a plain-language label from the IANA zone name', () => {
@@ -56,6 +56,31 @@ describe('resolveSegmentZones', () => {
   it('returns nulls for a segment with no resolvable location at all', () => {
     const zones = resolveSegmentZones({ departureLocationCode: null, arrivalLocationCode: null, timezone: null })
     expect(zones).toEqual({ departure: null, arrival: null })
+  })
+})
+
+describe('zonedDateTimeToUtc', () => {
+  it('parses wall-clock time as being in the given zone, not the runtime\'s own zone', () => {
+    // 9:00 AM in Kingston (America/Jamaica, fixed UTC-5, no DST) is 14:00 UTC.
+    const d = zonedDateTimeToUtc('2026-08-13', '09:00', 'America/Jamaica')
+    expect(d.toISOString()).toBe('2026-08-13T14:00:00.000Z')
+  })
+
+  it('produces different instants for the same wall-clock time in different zones', () => {
+    const kingston = zonedDateTimeToUtc('2026-08-13', '09:00', 'America/Jamaica')
+    const newYork = zonedDateTimeToUtc('2026-08-13', '09:00', 'America/New_York')
+    expect(kingston.getTime()).not.toBe(newYork.getTime())
+  })
+
+  it('handles a zone observing daylight saving correctly', () => {
+    // 9:00 AM EDT (America/New_York, UTC-4 in August) is 13:00 UTC.
+    const d = zonedDateTimeToUtc('2026-08-13', '09:00', 'America/New_York')
+    expect(d.toISOString()).toBe('2026-08-13T13:00:00.000Z')
+  })
+
+  it('falls back to parsing as UTC when no zone is known', () => {
+    const d = zonedDateTimeToUtc('2026-08-13', '09:00', null)
+    expect(d.toISOString()).toBe('2026-08-13T09:00:00.000Z')
   })
 })
 

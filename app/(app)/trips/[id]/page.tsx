@@ -15,33 +15,14 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const session = await auth()
   const userId = session!.user.id
 
-  const [trip, user, disruptions] = await Promise.all([
+  const [trip, user, disruptions, tripAgentRuns] = await Promise.all([
     prisma.trip.findFirst({
       where: { id, userId },
       include: {
         passengers: true,
         segments: {
           orderBy: { order: 'asc' },
-          include: {
-            monitoring: true,
-            passengerLinks: true,
-            // Small buffer of recent disruptions/runs per segment so the
-            // boarding pass can show live recovery status inline — the
-            // page's own query is the only data source it needs (no
-            // separate polling endpoint). See pickActiveRun below for how
-            // "active" is chosen when more than one recent run exists.
-            disruptions: {
-              orderBy: { detectedAt: 'desc' },
-              take: 3,
-              include: {
-                agentRuns: {
-                  orderBy: { createdAt: 'desc' },
-                  take: 1,
-                  include: { rescheduleRequests: { where: { status: 'REQUESTED' } } },
-                },
-              },
-            },
-          },
+          include: { monitoring: true, passengerLinks: true },
         },
       },
     }),
@@ -61,8 +42,37 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         },
       },
     }),
+    // A run's recovery work often touches segments other than the one that
+    // was originally disrupted (the connecting flight, the hotel it's now
+    // contacting on the passenger's behalf) — see AgentAction.segmentId and
+    // RescheduleRequest.segmentId below. Fetched flat per-trip (rather than
+    // nested under each segment's own `disruptions`, which only ever points
+    // at the segment that was disrupted) so pickActiveRun can attribute a
+    // run to every segment it actually touches, not just the origin one.
+    // Found via live testing 2026-08-12/13: the recovery ribbon never
+    // appeared on a downstream segment being contacted on the passenger's
+    // behalf, only on the one that triggered the run.
+    prisma.agentRun.findMany({
+      where: { tripId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: {
+        disruption: { select: { segmentId: true } },
+        actions: { select: { segmentId: true } },
+        rescheduleRequests: { where: { status: 'REQUESTED' }, select: { segmentId: true } },
+      },
+    }),
   ])
   if (!trip) notFound()
+
+  /** Every segment id a run's recovery work has touched — the segment it was detected on, plus any it logged an action or reschedule request against. */
+  function touchedSegmentIds(run: (typeof tripAgentRuns)[number]): Set<string> {
+    const ids = new Set<string>()
+    if (run.disruption.segmentId) ids.add(run.disruption.segmentId)
+    for (const a of run.actions) if (a.segmentId) ids.add(a.segmentId)
+    for (const r of run.rescheduleRequests) ids.add(r.segmentId)
+    return ids
+  }
 
   const dto: TripDTO = {
     id: trip.id,
@@ -72,15 +82,18 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     segments: trip.segments.map((s): SegmentDTO => {
       // Same "prefer the still-open run over the most recently resolved
       // one" rule the old TripRecoveryStatus.tsx banner used — reused here
-      // via isTerminalRunStatus rather than redefined.
-      const candidateRuns = s.disruptions.flatMap((d) => d.agentRuns)
+      // via isTerminalRunStatus rather than redefined. candidateRuns now
+      // includes any run that has touched this segment at all (see
+      // touchedSegmentIds above), not just the one it was originally
+      // disrupted on.
+      const candidateRuns = tripAgentRuns.filter((r) => touchedSegmentIds(r).has(s.id))
       const activeRunRow = candidateRuns.find((r) => !isTerminalRunStatus(r.status)) ?? candidateRuns[0] ?? null
       const activeRun: ActiveRunDTO | null = activeRunRow
         ? {
             id: activeRunRow.id,
             status: activeRunRow.status,
             summary: activeRunRow.summary,
-            pendingRescheduleCount: activeRunRow.rescheduleRequests.length,
+            pendingRescheduleCount: activeRunRow.rescheduleRequests.filter((r) => r.segmentId === s.id).length,
           }
         : null
 
