@@ -3,9 +3,21 @@ import { prisma } from '@/lib/db'
 // Used as the reset estimate for a provider that hasn't told us its real
 // window boundary yet (i.e. no rate-limit header available/seen) — a
 // reasonable guess, but see refreshResetAt for providers that report one.
-function nextCalendarMonthBoundary(): Date {
-  const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+//
+// Deliberately short (24h), not a full calendar month: a *guessed* resetAt
+// this file itself set can otherwise never self-correct. Once `getUsedUnits`
+// reports "exhausted," the adapter rotator (flightAdapter.ts) skips this
+// provider entirely and never calls it again — so refreshResetAt (which
+// only runs after a real, successful call) never gets a chance to learn the
+// provider's actual reset window. Found live 2026-09: a genuinely-used-up
+// month reset a guessed resetAt to a full month out, and the real account
+// refilled with real headroom weeks before that guess did — but the app had
+// no way to find out, since it had stopped asking. Capping the guess at 24h
+// means the worst case is one wasted probe a day, not an indefinite
+// deadlock; a provider that actually reports its window (refreshResetAt)
+// still overrides this with the real value regardless.
+function guessedResetBoundary(): Date {
+  return new Date(Date.now() + 24 * 60 * 60 * 1000)
 }
 
 export async function getUsedUnits(provider: string): Promise<number> {
@@ -26,8 +38,8 @@ export async function recordUsage(provider: string, units: number): Promise<void
 
   await prisma.providerUsage.upsert({
     where: { provider },
-    create: { provider, units, resetAt: nextCalendarMonthBoundary() },
-    update: expired ? { units, resetAt: nextCalendarMonthBoundary() } : { units: { increment: units } },
+    create: { provider, units, resetAt: guessedResetBoundary() },
+    update: expired ? { units, resetAt: guessedResetBoundary() } : { units: { increment: units } },
   })
 }
 
