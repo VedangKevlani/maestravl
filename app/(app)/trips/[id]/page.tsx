@@ -58,7 +58,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       take: 20,
       include: {
         disruption: { select: { segmentId: true } },
-        actions: { select: { segmentId: true } },
+        actions: { select: { segmentId: true, type: true, status: true, detail: true, createdAt: true } },
         rescheduleRequests: { where: { status: 'REQUESTED' }, select: { segmentId: true } },
       },
     }),
@@ -74,6 +74,39 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     return ids
   }
 
+  /**
+   * The most recent CONTACT_PROVIDER action per segment, still sitting at
+   * REQUIRES_APPROVAL — lib/agents/orchestrator.ts's draftContactRequest
+   * writes exactly this shape into `detail` when it finds a contact but
+   * stops short of emailing it, waiting on the passenger's own OK first.
+   */
+  function pendingContactCommunicationId(run: (typeof tripAgentRuns)[number], segmentId: string): string | null {
+    const candidates = run.actions
+      .filter((a) => a.segmentId === segmentId && a.type === 'CONTACT_PROVIDER')
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    const latest = candidates[0]
+    if (!latest || latest.status !== 'REQUIRES_APPROVAL' || !latest.detail) return null
+    try {
+      const parsed = JSON.parse(latest.detail) as { communicationId?: string }
+      return parsed.communicationId ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const pendingCommunicationIds = tripAgentRuns
+    .filter((r) => r.status === 'AWAITING_APPROVAL')
+    .flatMap((r) => [...touchedSegmentIds(r)].map((segId) => pendingContactCommunicationId(r, segId)))
+    .filter((commId): commId is string => Boolean(commId))
+
+  const pendingCommunications = pendingCommunicationIds.length
+    ? await prisma.communication.findMany({
+        where: { id: { in: pendingCommunicationIds } },
+        include: { contact: true },
+      })
+    : []
+  const pendingCommunicationById = new Map(pendingCommunications.map((c) => [c.id, c]))
+
   const dto: TripDTO = {
     id: trip.id,
     title: trip.title,
@@ -88,12 +121,27 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       // disrupted on.
       const candidateRuns = tripAgentRuns.filter((r) => touchedSegmentIds(r).has(s.id))
       const activeRunRow = candidateRuns.find((r) => !isTerminalRunStatus(r.status)) ?? candidateRuns[0] ?? null
+
+      const pendingCommId = activeRunRow?.status === 'AWAITING_APPROVAL' ? pendingContactCommunicationId(activeRunRow, s.id) : null
+      const pendingComm = pendingCommId ? pendingCommunicationById.get(pendingCommId) : null
+      const pendingContactApproval =
+        pendingComm && pendingComm.contact
+          ? {
+              communicationId: pendingComm.id,
+              contactValue: pendingComm.contact.value,
+              channel: pendingComm.contact.channel,
+              confidence: pendingComm.contact.confidence,
+              source: pendingComm.contact.source,
+            }
+          : null
+
       const activeRun: ActiveRunDTO | null = activeRunRow
         ? {
             id: activeRunRow.id,
             status: activeRunRow.status,
             summary: activeRunRow.summary,
             pendingRescheduleCount: activeRunRow.rescheduleRequests.filter((r) => r.segmentId === s.id).length,
+            pendingContactApproval,
           }
         : null
 

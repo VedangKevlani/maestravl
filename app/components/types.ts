@@ -50,6 +50,20 @@ export interface ActiveRunDTO {
   status: string
   summary: string | null
   pendingRescheduleCount: number
+  /**
+   * Set only when this run's status is AWAITING_APPROVAL and this specific
+   * segment has a contact found-but-unsent — see
+   * lib/agents/orchestrator.ts's draftContactRequest. Null once a decision
+   * (approve or decline) has been made, or if there was never one to begin
+   * with.
+   */
+  pendingContactApproval: {
+    communicationId: string
+    contactValue: string
+    channel: string
+    confidence: number
+    source: string
+  } | null
 }
 
 export interface PassengerDTO {

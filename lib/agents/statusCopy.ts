@@ -12,6 +12,7 @@ export const STATUS_COPY: Record<string, { headline: string; tone: 'progress' | 
   DETECTED: { headline: 'Maestravl noticed a change and is looking into it', tone: 'progress' },
   ANALYZING: { headline: "Maestravl is checking what this affects", tone: 'progress' },
   CONTACTING: { headline: 'Maestravl is reaching out on your behalf', tone: 'progress' },
+  AWAITING_APPROVAL: { headline: 'Maestravl found a contact — waiting for your OK', tone: 'attention' },
   WAITING_FOR_RESPONSE: { headline: "Maestravl is waiting to hear back", tone: 'progress' },
   RESCHEDULING: { headline: 'Maestravl is updating your itinerary', tone: 'progress' },
   CONFIRMED: { headline: "Confirmed — you're all set", tone: 'resolved' },

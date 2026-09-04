@@ -28,7 +28,15 @@ export const DISRUPTION_SEVERITIES = ['LOW', 'MEDIUM', 'HIGH'] as const
 export type DisruptionSeverity = typeof DISRUPTION_SEVERITIES[number]
 
 export const AGENT_RUN_STATUSES = [
-  'DETECTED', 'ANALYZING', 'CONTACTING', 'WAITING_FOR_RESPONSE', 'RESCHEDULING',
+  'DETECTED', 'ANALYZING', 'CONTACTING',
+  // A contact was found for an affected segment's provider, but nothing is
+  // sent yet — added so contacting a real business always waits for an
+  // explicit passenger OK first (spam/liability risk if Maestravl emailed
+  // strangers on its own judgment alone), not just for money-committing
+  // actions the way REQUEST_RESCHEDULE/UPDATE_ITINERARY already did. See
+  // lib/agents/orchestrator.ts's draftContactRequest / approveContact.ts.
+  'AWAITING_APPROVAL',
+  'WAITING_FOR_RESPONSE', 'RESCHEDULING',
   'CONFIRMED', 'FAILED', 'ALTERNATIVE_FOUND', 'ACTION_REQUIRED', 'COMPLETED',
   // A newer disruption report came in for the same segment before this run
   // finished — see lib/agents/detect.ts's handleDisruptionDetection, which

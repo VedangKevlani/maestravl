@@ -28,10 +28,9 @@
 // verified).
 
 import { prisma } from '@/lib/db'
-import { sendDisruptionImpactEmail, sendProviderEmail } from '@/lib/email'
+import { sendDisruptionImpactEmail } from '@/lib/email'
 import { sendDisruptionImpactText, isTextChannelConfigured, type TextChannel } from '@/lib/sms'
 import { segmentLabel } from '@/lib/segmentLabel'
-import { buildReplyAddress } from '@/lib/inboundReplyAddress'
 import { planAnalysis, type PlannerSegment } from './analyze'
 import { classifyActionRisk, canAutoExecute } from './policy'
 import { findOrDiscoverContact, isAutoContactable, type ProviderContactRecord } from './contact'
@@ -112,12 +111,14 @@ type SegmentRow = Prisma.SegmentGetPayload<{}>
 type DisruptionRow = Prisma.DisruptionGetPayload<{}>
 type TripWithRelations = Prisma.TripGetPayload<{ include: { segments: true; passengers: true } }>
 
-interface ContactOutcome {
+export interface ContactOutcome {
   impact: SegmentImpact
   segment: SegmentRow
   contacted: boolean
   /** A phone/web-form/portal contact Contact Discovery found but can't auto-message (see isAutoContactable) — surfaced to the passenger as a manual fallback instead of silently escalating with nothing to show. */
   fallbackContact: { channel: string; value: string } | null
+  /** Set when an emailable contact was found and drafted but is waiting on passenger approval before anything is actually sent — see draftContactRequest below. */
+  pendingApprovalCommunicationId?: string
 }
 
 async function runAnalysis(agentRunId: string) {
@@ -180,21 +181,48 @@ async function runAnalysis(agentRunId: string) {
 
   await notifyPassengersOfImpact(agentRunId, trip, disruptedSegment, run.disruption, plan.summary, contactResults)
 
-  const anyContacted = contactResults.some((r) => r.contacted)
-  const allContacted = contactResults.every((r) => r.contacted)
-  const uncontactedCount = contactResults.filter((r) => !r.contacted).length
-
-  const status = allContacted ? 'WAITING_FOR_RESPONSE' : 'ACTION_REQUIRED'
-  const summary = allContacted
-    ? `Maestravl reached out to ${contactResults.length} provider${contactResults.length === 1 ? '' : 's'} and is waiting to hear back.`
-    : anyContacted
-      ? `Maestravl reached out to some providers automatically; ${uncontactedCount} other reservation${uncontactedCount === 1 ? '' : 's'} still need${uncontactedCount === 1 ? 's' : ''} your attention.`
-      : plan.summary
-
   return prisma.agentRun.update({
     where: { id: agentRunId },
-    data: { status, summary, completedAt: null },
+    data: { ...computeContactPhaseStatus(contactResults, plan.summary), completedAt: null },
   })
+}
+
+/**
+ * A run's status once contact-drafting finishes — shared with
+ * approveContact.ts, which recomputes this same way after each approve/
+ * decline decision (a run can have several affected segments, each with
+ * its own pending/sent/declined contact, so "what's the run's overall
+ * status" is a function of all of them, not just the one just decided).
+ * AWAITING_APPROVAL takes priority: contacting is the one action this
+ * pipeline never takes on its own judgment (see draftContactRequest), so
+ * as long as even one contact is still waiting on a passenger decision,
+ * that's the truest description of what the run needs next.
+ */
+export function computeContactPhaseStatus(contactResults: ContactOutcome[], fallbackSummary: string): { status: string; summary: string } {
+  const pendingApprovals = contactResults.filter((r) => r.pendingApprovalCommunicationId)
+  const anyContacted = contactResults.some((r) => r.contacted)
+  const allContacted = contactResults.length > 0 && contactResults.every((r) => r.contacted)
+  const uncontactedCount = contactResults.filter((r) => !r.contacted && !r.pendingApprovalCommunicationId).length
+
+  if (pendingApprovals.length > 0) {
+    return {
+      status: 'AWAITING_APPROVAL',
+      summary: `Maestravl found ${pendingApprovals.length} contact${pendingApprovals.length === 1 ? '' : 's'} and is waiting for your OK before reaching out.`,
+    }
+  }
+  if (allContacted) {
+    return {
+      status: 'WAITING_FOR_RESPONSE',
+      summary: `Maestravl reached out to ${contactResults.length} provider${contactResults.length === 1 ? '' : 's'} and is waiting to hear back.`,
+    }
+  }
+  if (anyContacted) {
+    return {
+      status: 'ACTION_REQUIRED',
+      summary: `Maestravl reached out to some providers automatically; ${uncontactedCount} other reservation${uncontactedCount === 1 ? '' : 's'} still need${uncontactedCount === 1 ? 's' : ''} your attention.`,
+    }
+  }
+  return { status: 'ACTION_REQUIRED', summary: fallbackSummary }
 }
 
 /** Finds a contact for one affected segment and, if one is usable, sends a request. Always logs FIND_CONTACT; only logs CONTACT_PROVIDER/REQUEST_RESCHEDULE if a send was actually attempted. */
@@ -234,7 +262,7 @@ async function contactProvider(
     return { impact, segment, contacted: false, fallbackContact }
   }
 
-  return sendContactRequest(agentRunId, segment, impact, contact, label, reasonText, allSegments)
+  return draftContactRequest(agentRunId, segment, impact, contact, label, reasonText, allSegments)
 }
 
 /**
@@ -273,7 +301,17 @@ async function proposeAlternatives(agentRunId: string, segment: SegmentRow, labe
   return backup?.proposedTime ?? null
 }
 
-async function sendContactRequest(
+/**
+ * Composes the outbound request and drafts it as a Communication, but never
+ * sends it — contacting a real business/person is exactly the kind of
+ * action Maestravl shouldn't take purely on its own judgment (a wrong or
+ * stale contact means real spam to a stranger), so this always stops for
+ * an explicit passenger approval first (see approveContact.ts for the
+ * other half: the actual send, once approved). The AgentAction's `detail`
+ * carries everything approval needs to finish the job later — requestedTime
+ * and reasonText aren't reconstructible from the Communication row alone.
+ */
+async function draftContactRequest(
   agentRunId: string,
   segment: SegmentRow,
   impact: SegmentImpact,
@@ -311,41 +349,20 @@ async function sendContactRequest(
     },
   })
 
-  try {
-    await sendProviderEmail(contact.value, message.subject, message.body, buildReplyAddress(communication.id) ?? undefined)
-    await prisma.communication.update({ where: { id: communication.id }, data: { status: 'SENT', sentAt: new Date() } })
-    await logAction(agentRunId, {
-      type: 'CONTACT_PROVIDER',
-      segmentId: segment.id,
-      description: `Sent a request to ${label}'s provider (${contact.value}).`,
-      status: 'EXECUTED',
-    })
+  await logAction(agentRunId, {
+    type: 'CONTACT_PROVIDER',
+    segmentId: segment.id,
+    description: `Found a contact for ${label}'s provider (${contact.value}, confidence ${contact.confidence}) — waiting for your OK before reaching out.`,
+    status: 'REQUIRES_APPROVAL',
+    detail: {
+      communicationId: communication.id,
+      requestedTime: impact.shiftedStart ? impact.shiftedStart.toISOString() : null,
+      reasonText,
+      label,
+    },
+  })
 
-    if (impact.shiftedStart) {
-      await prisma.rescheduleRequest.create({
-        data: { agentRunId, segmentId: segment.id, requestedTime: impact.shiftedStart, reason: reasonText, status: 'REQUESTED' },
-      })
-      await logAction(agentRunId, {
-        type: 'REQUEST_RESCHEDULE',
-        segmentId: segment.id,
-        description: `Requested moving ${label} to ${formatTime(impact.shiftedStart, segment.timezone)}.`,
-        status: 'EXECUTED',
-      })
-    }
-
-    return { impact, segment, contacted: true, fallbackContact: null }
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-    await prisma.communication.update({ where: { id: communication.id }, data: { status: 'FAILED', errorMessage } })
-    await logAction(agentRunId, {
-      type: 'CONTACT_PROVIDER',
-      segmentId: segment.id,
-      description: `Failed to send a request to ${label}'s provider.`,
-      detail: { error: errorMessage },
-      status: 'FAILED',
-    })
-    return { impact, segment, contacted: false, fallbackContact: null }
-  }
+  return { impact, segment, contacted: false, fallbackContact: null, pendingApprovalCommunicationId: communication.id }
 }
 
 async function notifyPassengersOfImpact(
@@ -357,11 +374,12 @@ async function notifyPassengersOfImpact(
   contactResults: ContactOutcome[]
 ) {
   const disruptedLabel = segmentLabel(disruptedSegment)
-  const affected = contactResults.map(({ impact, segment, contacted, fallbackContact }) => ({
+  const affected = contactResults.map(({ impact, segment, contacted, fallbackContact, pendingApprovalCommunicationId }) => ({
     label: segmentLabel(segment),
     reason: impact.reason || fallbackReason,
     contacted,
     fallbackContact,
+    awaitingApproval: Boolean(pendingApprovalCommunicationId),
   }))
 
   const attempts: { passenger: (typeof trip.passengers)[number]; channel: 'EMAIL' | TextChannel }[] = []

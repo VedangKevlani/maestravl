@@ -186,6 +186,7 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [approving, setApproving] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [delayModalOpen, setDelayModalOpen] = useState(false)
   const [updatesModalOpen, setUpdatesModalOpen] = useState(false)
@@ -222,6 +223,7 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   // the terminal status lands.
   const showRibbon = Boolean(activeRun && (!isTerminalRunStatus(activeRun.status) || activeRun.status === 'CONFIRMED'))
   const isReschedulingPrompt = activeRun?.status === 'RESCHEDULING'
+  const pendingContactApproval = activeRun?.status === 'AWAITING_APPROVAL' ? activeRun.pendingContactApproval : null
   const canResolve = activeRun?.status === 'WAITING_FOR_RESPONSE' || activeRun?.status === 'ACTION_REQUIRED'
   const runTone = activeRun ? toneOf(activeRun.status) : null
   const runHeadline = activeRun ? (STATUS_COPY[activeRun.status]?.headline ?? activeRun.status) : null
@@ -282,6 +284,18 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
       body: JSON.stringify({ accept }),
     })
     setConfirming(false)
+    router.refresh()
+  }
+
+  async function handleApproveContact(approve: boolean) {
+    if (!activeRun || !pendingContactApproval) return
+    setApproving(true)
+    await fetch(`/api/agent-runs/${activeRun.id}/approve-contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ communicationId: pendingContactApproval.communicationId, approve }),
+    })
+    setApproving(false)
     router.refresh()
   }
 
@@ -458,6 +472,12 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                     Maestravl thinks this reply means yes, but only you can confirm it — check the messages below before deciding.
                   </p>
                 )}
+                {pendingContactApproval && (
+                  <p className={styles.runRibbonNote}>
+                    Found via {pendingContactApproval.source.toLowerCase().replace('_', ' ')} (confidence {pendingContactApproval.confidence}):{' '}
+                    <strong>{pendingContactApproval.contactValue}</strong>. Reach out on your behalf?
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                   {isReschedulingPrompt && (
                     <>
@@ -474,6 +494,24 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                         className={styles.manageBtnSecondary}
                       >
                         Not quite
+                      </button>
+                    </>
+                  )}
+                  {pendingContactApproval && (
+                    <>
+                      <button
+                        onClick={() => handleApproveContact(true)}
+                        disabled={approving}
+                        className={styles.manageBtn}
+                      >
+                        {approving ? 'Sending…' : 'Yes, reach out'}
+                      </button>
+                      <button
+                        onClick={() => handleApproveContact(false)}
+                        disabled={approving}
+                        className={styles.manageBtnSecondary}
+                      >
+                        No, I'll handle it
                       </button>
                     </>
                   )}
