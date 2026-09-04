@@ -9,7 +9,7 @@ const ENV_VAR = 'AERODATABOX_API_KEY'
 const HOST = 'aerodatabox.p.rapidapi.com'
 const BASE_URL = `https://${HOST}/flights/number`
 
-function mapStatus(status: string | undefined): MonitoringCheckStatus {
+export function mapStatus(status: string | undefined): MonitoringCheckStatus {
   switch ((status ?? '').toLowerCase()) {
     case 'expected':
       return 'ON_TIME'
@@ -22,6 +22,7 @@ function mapStatus(status: string | undefined): MonitoringCheckStatus {
     case 'cancelled':
     case 'cancelleduncertain':
       return 'CANCELLED'
+    case 'delayed':
     case 'diverted':
       return 'DELAYED'
     default:
