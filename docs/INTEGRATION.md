@@ -121,14 +121,18 @@ will still need a paid plan on at least one provider.
 restricted cron job frequency more than this app needs (Pro allows
 finer-grained crons). Rather than gamble on that, the primary trigger is
 `.github/workflows/monitoring-cron.yml` — a GitHub Actions scheduled
-workflow that `curl`s `https://maestravl.vercel.app/api/cron/monitoring`
+workflow that `curl`s `https://www.maestravl.com/api/cron/monitoring`
 **every 30 minutes** with `Authorization: Bearer $CRON_SECRET`, so segments
 in the imminent tier actually get checked that often. **This URL is
-hardcoded** — when the domain migrates to `maestravl.com` (purchased,
-DNS on Cloudflare, not yet pointed at Vercel as of this writing), this
-line must be updated to match or monitoring silently stops running with
-no error surfaced anywhere except a stale `MonitoringRecord.lastCheckedAt`
-on `/system-health`. `vercel.json` still
+hardcoded** — updated 2026-09 to `www.maestravl.com` now that the domain
+is live and pointed at Vercel (note: the bare apex `maestravl.com`
+308-redirects to `www`, and this `curl` doesn't follow redirects, so the
+`www` form specifically is required — pointing at the apex would silently
+stop monitoring without any error, since a 308 still counts as a
+"successful" request to `curl -f`). If the canonical domain ever changes
+again, this line must move with it or monitoring silently stops running,
+with no error surfaced anywhere except a stale
+`MonitoringRecord.lastCheckedAt` on `/system-health`. `vercel.json` still
 declares its own cron hitting the same route as a backup, at whatever
 cadence Hobby actually permits — harmless either way, since the route only
 acts on segments whose `nextCheckAt` has passed, so redundant calls no-op

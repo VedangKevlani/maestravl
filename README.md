@@ -12,7 +12,7 @@ the engine and recovery pipeline are built,
 monitoring providers, [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) for
 every data source/model/third-party tool in use, and
 [`docs/DEMO_WALKTHROUGH.md`](docs/DEMO_WALKTHROUGH.md) for a live walkthrough
-of the agentic recovery flow. Live demo: **https://maestravl.vercel.app**.
+of the agentic recovery flow. Live demo: **https://maestravl.com**.
 
 Licensed under [MIT](LICENSE).
 

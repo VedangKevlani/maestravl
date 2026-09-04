@@ -20,5 +20,9 @@ jobs:
     steps:
       - name: Trigger monitoring check
         run: |
-          curl -sf -X GET "https://maestravl.vercel.app/api/cron/monitoring" \
+          # www.maestravl.com, not the bare apex — maestravl.com 308-redirects
+          # to www, and this curl doesn't follow redirects (-L), so pointing
+          # at the apex would "succeed" without ever actually hitting the
+          # monitoring route.
+          curl -sf -X GET "https://www.maestravl.com/api/cron/monitoring" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

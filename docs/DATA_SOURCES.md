@@ -47,19 +47,25 @@ unconfigured.
 | **Resend** | Outbound provider/passenger email, plus real inbound-reply detection via a signature-verified webhook | Free tier |
 | **Twilio** | SMS + WhatsApp passenger notifications (`lib/sms.ts`), alongside email, for a passenger who may not see an email in time mid-disruption | SMS: free trial credit, real per-message cost in production (opt-in). WhatsApp: free via Twilio's Sandbox (recipient must join once) |
 
-**Current real constraint on outbound email:** `EMAIL_FROM` is still Resend's
+**Outbound email — resolved 2026-09.** Earlier builds sent from Resend's
 shared sandbox sender (`onboarding@resend.dev`), which by Resend's own
 design only delivers to the email address that signed up for the Resend
-account — not arbitrary real passengers/providers. This is why every real
-send so far has deliberately gone to the team's own inbox during testing.
-It fails honestly, not silently: `lib/email.ts` throws on a rejected send,
-and `orchestrator.ts` catches it and logs the `Communication`/`AgentAction`
-as `FAILED`, never a fake success. **Not caused by Vercel hosting** —
-purely a Resend sending-domain limitation. Fix in progress: the team is
-migrating to `maestravl.com` (already purchased, DNS on Cloudflare, not
-yet pointed at Vercel), after which verifying that domain with Resend
-(SPF/DKIM records) and updating `EMAIL_FROM` unlocks real delivery to any
-recipient. Two independent steps, not automatic on domain migration alone.
+account, not arbitrary real passengers/providers — every real send during
+testing before this had to deliberately go to the team's own inbox. Never
+a silent failure either way: `lib/email.ts` throws on a rejected send and
+`orchestrator.ts` logs the `Communication`/`AgentAction` as `FAILED`,
+never a fake success. `maestravl.com` is now verified with Resend
+(SPF/DKIM records added) and pointed at this Vercel deployment, and
+`EMAIL_FROM` now defaults to `Maestravl <notifications@maestravl.com>` —
+real delivery to any recipient. (This was never a Vercel-hosting
+limitation — verifying a sending domain with Resend and pointing DNS at
+Vercel are two independent steps that happened to land around the same
+time.)
+
+**Inbound reply detection is unaffected by this and still uses its
+existing configuration** — enabling inbound *receiving* on the new domain
+is a separate, still-pending step in Resend, not yet done as of this
+writing. Don't change `RESEND_INBOUND_DOMAIN` until that's confirmed.
 
 ## Platform / infrastructure
 
@@ -68,7 +74,7 @@ recipient. Two independent steps, not automatic on domain migration alone.
 | **Supabase** (Postgres + Storage) | Primary database and encrypted document blob storage |
 | **Prisma 5** | ORM / schema / migrations |
 | **Auth.js (NextAuth v5)** | Credential-based auth, JWT sessions |
-| **Vercel** | Hosting/deployment (`https://maestravl.vercel.app`) |
+| **Vercel** | Hosting/deployment (`https://www.maestravl.com`, migrated from `maestravl.vercel.app` 2026-09) |
 | **GitHub Actions** | Scheduled monitoring cron (every 30 min — see `.github/workflows/monitoring-cron.yml`) |
 
 ## Open-source libraries doing real work (no external API, no cost)

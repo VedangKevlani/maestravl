@@ -5,6 +5,13 @@ import { formatFriendlyTime } from './dateFormat'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// maestravl.com is verified with Resend as of 2026-09 — real delivery to
+// any recipient, not just the Resend account's own inbox (see
+// docs/DATA_SOURCES.md for why that was ever a constraint). Still the
+// fallback, not a hardcoded default, so EMAIL_FROM in .env/Vercel remains
+// the actual source of truth.
+const DEFAULT_FROM = 'Maestravl <notifications@maestravl.com>'
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -15,7 +22,7 @@ function escapeHtml(text: string): string {
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string) {
-  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM ?? DEFAULT_FROM
 
   const { error } = await resend.emails.send({
     from,
@@ -39,7 +46,7 @@ export async function sendPassengerAddedEmail(
     segments: { label: string; departureTime: Date | null; timezone: string | null }[]
   }
 ) {
-  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM ?? DEFAULT_FROM
   const subject = `You're on ${opts.tripTitle}`
 
   const itineraryHtml = opts.segments.length
@@ -72,7 +79,7 @@ export async function sendStatusChangeEmail(
   to: string,
   opts: { recipientName: string; segmentLabel: string; tripTitle: string; previousStatus: string | null; newStatus: string }
 ) {
-  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM ?? DEFAULT_FROM
   const newLabel = formatMonitoringStatus(opts.newStatus)
   const subject = `${opts.segmentLabel} is now ${newLabel}`
 
@@ -108,7 +115,7 @@ export async function sendDisruptionImpactEmail(
     affected: { label: string; reason: string; contacted: boolean; fallbackContact?: { channel: string; value: string } | null }[]
   }
 ) {
-  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM ?? DEFAULT_FROM
   const newLabel = formatMonitoringStatus(opts.newStatus)
   const contactedCount = opts.affected.filter((a) => a.contacted).length
   const subject = `${opts.tripTitle}: ${opts.affected.length} other reservation${opts.affected.length === 1 ? '' : 's'} may need attention`
@@ -166,7 +173,7 @@ export async function sendDisruptionImpactEmail(
  * is listening on.
  */
 export async function sendProviderEmail(to: string, subject: string, textBody: string, replyTo?: string) {
-  const from = process.env.EMAIL_FROM ?? 'Maestravl <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM ?? DEFAULT_FROM
   const html = `<div style="white-space: pre-wrap; font-family: sans-serif;">${escapeHtml(textBody)}</div>`
 
   const { error } = await resend.emails.send({
