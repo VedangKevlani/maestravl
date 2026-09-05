@@ -131,7 +131,16 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
       note: parsed.note?.trim() || FALLBACK.note,
       matchedTime: parsed.intent === 'ACCEPTED' && parsed.matchedTime === 'ALTERNATIVE' ? 'ALTERNATIVE' : parsed.intent === 'ACCEPTED' && parsed.matchedTime === 'PRIMARY' ? 'PRIMARY' : 'NONE',
     }
-  } catch {
+  } catch (err) {
+    // Degrading to FALLBACK on any failure is deliberate (see header
+    // comment) — but doing it silently meant a real timeout/network/parse
+    // failure was indistinguishable from Gemini genuinely reading a reply
+    // as ambiguous, with zero trace to tell them apart. Logged, not
+    // swallowed, so a repeat of the 2026-09 intermittent-FALLBACK issue
+    // (root cause: this route's own Vercel function duration, since fixed)
+    // shows up in the function logs instead of just looking like a vague
+    // reply.
+    console.error('classifyReply failed, degrading to FALLBACK:', err instanceof Error ? err.message : err)
     return FALLBACK
   }
 }

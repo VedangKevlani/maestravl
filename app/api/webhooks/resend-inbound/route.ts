@@ -6,6 +6,20 @@ import { processInboundReply } from '@/lib/agents/inboundReply'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// Vercel's default function duration (10s on Hobby) is tight for this
+// route's real sequence — signature verify, a Resend API fetch for the
+// full email, several DB round-trips, then classifyReply's own Gemini
+// call — and a cold start alone can eat a meaningful slice of that budget.
+// Confirmed live (2026-09): identical replies classified correctly every
+// time when the same request ran standalone, but intermittently (~1 in 3)
+// silently degraded to classifyReply's FALLBACK (its catch-all swallows
+// the real error) when run through this route — consistent with the
+// platform cutting the request short before Gemini's response lands, not
+// a real interpretation failure. app/api/trips/[id]/voice/route.ts
+// already hit this exact class of problem for its own Gemini/Groq call
+// and fixed it the same way.
+export const maxDuration = 60
+
 // Receives Resend's `email.received` webhook — fired when a provider
 // replies to a request Maestravl sent on the passenger's behalf (see
 // lib/inboundReplyAddress.ts for how the Reply-To address on the way out
