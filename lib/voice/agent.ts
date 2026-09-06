@@ -12,19 +12,24 @@
 // convention as every other external integration in this codebase besides
 // @google/genai and Resend/Supabase).
 //
-// Two models, not one — confirmed live (2026-08-13) that neither is
-// flawless on its own: llama-3.3-70b-versatile has the better free-tier
-// headroom (12K TPM vs. gpt-oss-120b's 8K — both 30 RPM) but intermittently
-// emits a malformed internal function-call format Groq's backend rejects
-// outright with a 400 ("Failed to call a function. Please adjust your
-// prompt."), a known Llama-specific tool-calling quirk, not a bug in this
-// codebase's request shape. gpt-oss-120b is OpenAI's own open-weight
-// model, natively trained on this exact tool-call JSON format, so it
-// doesn't hit that failure mode — but its lower TPM means it's more prone
-// to rate-limiting under a token-heavy system prompt. Since Groq's rate
-// limits are tracked per model (independent buckets), falling back from
-// one to the other on ANY failure is strictly better than retrying the
-// same model: it recovers from both failure modes, not just one.
+// Two models, not one, for the same reason as always: Groq's rate limits
+// are tracked per model (independent buckets), so falling back from one to
+// the other on ANY failure recovers from more failure modes than retrying
+// the same model ever could.
+//
+// llama-3.3-70b-versatile (the original primary here, chosen 2026-08-13
+// for its better free-tier TPM headroom) was retired from Groq entirely
+// sometime after that — confirmed live (2026-09-05) it now 404s with
+// "model_not_found" on every single call, not intermittently. Every real
+// turn was silently paying for a doomed call before ever reaching the
+// fallback, which for a question needing 2-3 tool-call rounds (e.g. "why
+// is my flight delayed" — itinerary lookup, then status, then recovery
+// activity) was enough extra latency/call volume on its own to tip into a
+// timeout or the *fallback* model's own rate limit, something a single
+// generic "Maestravl is having trouble" reply gave no way to tell apart
+// from a genuine outage. gpt-oss-20b (same vendor/tool-call format as
+// gpt-oss-120b, confirmed live to actually exist) replaces it — a real
+// second bucket again, not a bug in this codebase's request shape.
 //
 // Deliberately read-only: there is no mutating tool anywhere in this file's
 // tool loop. The voice assistant can describe what the passenger could do
@@ -43,8 +48,8 @@ import { toSpeakableText } from './sanitizeSpeech'
 import type { VoiceContext, VoiceTurnMessage } from './types'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const PRIMARY_MODEL = 'llama-3.3-70b-versatile'
-const FALLBACK_MODEL = 'openai/gpt-oss-120b'
+const PRIMARY_MODEL = 'openai/gpt-oss-120b'
+const FALLBACK_MODEL = 'openai/gpt-oss-20b'
 // The model can batch every tool call it needs into one turn, so a normal
 // exchange resolves in 1-2 iterations (a function-call round, then a final
 // text round). This is a safety rail against a confused tool-call loop,
