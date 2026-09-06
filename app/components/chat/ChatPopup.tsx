@@ -31,7 +31,7 @@ function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => vo
   const popupRef = useRef<HTMLDivElement>(null)
   const { position, dragHandleProps } = useDraggable(popupRef)
 
-  const { supported: micSupported, listening, startListening, stopListening } = useSpeechCapture((text) => {
+  const { supported: micSupported, listening, toggleListening } = useSpeechCapture((text) => {
     sendTurn(text)
   })
 
@@ -73,13 +73,10 @@ function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => vo
         <button
           type="button"
           className={`${styles.micBtn} ${listening ? styles.listening : ''}`}
-          aria-label={listening ? 'Stop listening' : 'Hold to speak to Maestro'}
-          title={listening ? 'Stop listening' : 'Hold to speak to Maestro'}
-          disabled={state === 'thinking' || state === 'speaking'}
-          onPointerDown={startListening}
-          onPointerUp={stopListening}
-          onPointerLeave={() => listening && stopListening()}
-          style={{ touchAction: 'none' }}
+          aria-label={!micSupported ? 'Voice input is not supported in this browser — try Chrome or Edge' : listening ? 'Stop listening' : 'Click to speak to Maestro'}
+          title={!micSupported ? 'Voice input is not supported in this browser — try Chrome or Edge' : listening ? 'Stop listening' : 'Click to speak to Maestro'}
+          disabled={!micSupported || state === 'thinking' || state === 'speaking'}
+          onClick={toggleListening}
         >
           <Mic size={14} />
         </button>

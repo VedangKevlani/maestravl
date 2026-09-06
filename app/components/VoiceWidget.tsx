@@ -6,22 +6,24 @@ import styles from '../styles/trip.module.css'
 
 export default function VoiceWidget({ tripId }: { tripId: string }) {
   const { state, errorMessage, messages, sendTurn } = useVoiceTurn(tripId)
-  const { listening, startListening, stopListening } = useSpeechCapture(sendTurn)
+  const { supported, listening, toggleListening } = useSpeechCapture(sendTurn)
 
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
 
   const isThinking = state === 'thinking' || state === 'speaking'
 
-  const label = listening
-    ? 'Listening…'
-    : state === 'thinking'
-      ? 'Thinking…'
-      : state === 'speaking'
-        ? 'Speaking…'
-        : state === 'error'
-          ? errorMessage ?? 'Something went wrong'
-          : 'Hold to talk to Maestro'
+  const label = !supported
+    ? 'Voice input is not supported in this browser — try Chrome or Edge'
+    : listening
+      ? 'Listening… (click to stop)'
+      : state === 'thinking'
+        ? 'Thinking…'
+        : state === 'speaking'
+          ? 'Speaking…'
+          : state === 'error'
+            ? errorMessage ?? 'Something went wrong'
+            : 'Click to talk to Maestro'
 
   return (
     <div className={styles.voiceWidget} data-tour="voice-widget">
@@ -44,10 +46,8 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
 
       {/* Mic button */}
       <button
-        onPointerDown={startListening}
-        onPointerUp={stopListening}
-        onPointerLeave={() => listening && stopListening()}
-        disabled={isThinking}
+        onClick={toggleListening}
+        disabled={isThinking || !supported}
         aria-label={label}
         data-tip={label}
         className={`${styles.voiceWidgetBtn} ${listening ? styles.voiceWidgetBtnListening : ''}`}

@@ -77,7 +77,17 @@ export function useSpeechCapture(onFinalTranscript: (text: string) => void) {
       setListening(false)
       if (erroredRef.current) return
       const text = capturedTranscriptRef.current
-      if (text) onFinalTranscript(text)
+      if (text) {
+        onFinalTranscript(text)
+        return
+      }
+      // A press too brief for the recognizer to capture anything ends
+      // cleanly with no error event at all (the browser's own 'no-speech'
+      // error only fires after it's been listening for a few seconds of
+      // silence) — previously this just did nothing, which looked
+      // identical to the mic being broken. A real click (rather than a
+      // deliberate hold) hits this every time.
+      setErrorMessage(SPEECH_ERROR_MESSAGES['no-speech'])
     }
 
     recognitionRef.current = recognition
@@ -89,5 +99,18 @@ export function useSpeechCapture(onFinalTranscript: (text: string) => void) {
     recognitionRef.current?.stop()
   }
 
-  return { supported, listening, errorMessage, startListening, stopListening }
+  // Click-to-toggle rather than press-and-hold: a real click (mouse down
+  // immediately followed by mouse up) is a much shorter gesture than
+  // deliberately holding a button down while speaking a full sentence, and
+  // gave the recognizer no real time to capture anything — the exact
+  // silent-failure case above. Toggling on a plain click is the more
+  // forgiving, more discoverable interaction (also standard for
+  // push-to-talk UIs that expect a full sentence, as opposed to
+  // walkie-talkie-style hold for a short utterance).
+  function toggleListening() {
+    if (listening) stopListening()
+    else startListening()
+  }
+
+  return { supported, listening, errorMessage, startListening, stopListening, toggleListening }
 }
