@@ -29,10 +29,25 @@ function timeOnly(date: Date, timezone: string): string {
  */
 export default function SegmentWorldClock({ segment, homeTimezone }: { segment: SegmentDTO; homeTimezone: string | null }) {
   const zones = resolveSegmentZones(segment)
-  const [, setTick] = useState(0)
+  // nowClock() reads the real clock at render time — identical to
+  // formatRelativeTime's bug in BoardingPass.tsx (confirmed live
+  // 2026-10-10, React hydration error #418): the server's render instant
+  // and the client's first-render instant are never exactly the same
+  // moment, so whenever they straddle a minute boundary the formatted
+  // "3:42 PM" vs "3:43 PM" text differs and hydration fails. `mounted`
+  // stays false through the first render on both server and client
+  // (identical, so nothing to mismatch), then flips true from an effect
+  // — which by definition only ever runs client-side, after hydration
+  // already succeeded.
+  // null (not just false) so the per-30s tick below — needed to keep the
+  // clock actually advancing, not just mount once — reliably produces a
+  // new value each time and always triggers a re-render.
+  const [tick, setTick] = useState<number | null>(null)
+  const mounted = tick !== null
 
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000)
+    setTick(0)
+    const id = setInterval(() => setTick((t) => (t ?? 0) + 1), 30_000)
     return () => clearInterval(id)
   }, [])
 
@@ -54,7 +69,7 @@ export default function SegmentWorldClock({ segment, homeTimezone }: { segment: 
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-editorial text-white/40" style={{ fontSize: '0.72rem' }}>
         {columns.map((c) => (
           <span key={c.label}>
-            {c.label}: {nowClock(c.timezone)} <span className="text-white/25">({friendlyZoneLabel(c.timezone)})</span>
+            {c.label}: {mounted ? nowClock(c.timezone) : '…'} <span className="text-white/25">({friendlyZoneLabel(c.timezone)})</span>
           </span>
         ))}
       </div>

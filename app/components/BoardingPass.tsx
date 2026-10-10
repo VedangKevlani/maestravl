@@ -109,7 +109,7 @@ interface Communication {
   createdAt: string
 }
 
-function formatRelativeTime(iso: string): string {
+function computeRelativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
   const mins = Math.round(ms / 60000)
   if (mins < 1) return 'just now'
@@ -119,9 +119,36 @@ function formatRelativeTime(iso: string): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(iso))
 }
 
+/**
+ * "X ago" text depends on Date.now() at render time — computing it directly
+ * during render means the server's render instant and the client's first
+ * render instant almost never match exactly, and whenever they straddle a
+ * minute boundary the text differs ("2m ago" vs "3m ago"), which is a real,
+ * confirmed hydration mismatch (React error #418) found live 2026-10-10:
+ * timing-dependent, so it didn't always reproduce, but when it hit, the
+ * subtree React discarded and regenerated could leave nearby interactive
+ * elements (the contact-approval button, "View messages") not responding
+ * to clicks until a manual reload — matching a real report of the approval
+ * prompt and message history silently not appearing. Fix: render nothing
+ * on the first pass (identical on server and client, so hydration can
+ * never mismatch here), then fill in the real value from a client-only
+ * effect, which by definition never runs during SSR.
+ */
+function useRelativeTime(iso: string | null | undefined): string {
+  const [label, setLabel] = useState('')
+  useEffect(() => {
+    if (!iso) { setLabel(''); return }
+    setLabel(computeRelativeTime(iso))
+    const id = setInterval(() => setLabel(computeRelativeTime(iso)), 30_000)
+    return () => clearInterval(id)
+  }, [iso])
+  return label
+}
+
 /** A real sent/received message — the proof behind a run's status, not another paraphrase. Ported from the old TripRecoveryStatus.tsx unchanged. */
 function MessageCard({ message }: { message: Communication }) {
   const isInbound = message.direction === 'INBOUND'
+  const relativeTime = useRelativeTime(message.createdAt)
   return (
     <div className="rounded-lg p-3" style={{ background: isInbound ? 'rgba(82,183,136,0.06)' : 'rgba(255,255,255,0.03)' }}>
       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -131,7 +158,7 @@ function MessageCard({ message }: { message: Communication }) {
         >
           {isInbound ? "Provider's reply" : 'Sent by Maestravl'}
         </span>
-        <span className="text-label text-white/30" style={{ fontSize: '0.6rem' }}>{formatRelativeTime(message.createdAt)}</span>
+        <span className="text-label text-white/30" style={{ fontSize: '0.6rem' }}>{relativeTime}</span>
       </div>
       {message.subject && (
         <p className="text-editorial text-white/80 font-medium mb-1" style={{ fontSize: '0.78rem' }}>{message.subject}</p>
@@ -191,6 +218,8 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   const [delayModalOpen, setDelayModalOpen] = useState(false)
   const [updatesModalOpen, setUpdatesModalOpen] = useState(false)
   const [extraOpen, setExtraOpen] = useState(false)
+
+  const lastCheckedRelative = useRelativeTime(segment.monitoring?.lastCheckedAt)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: segment.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -319,7 +348,7 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
         {segment.monitoring?.status !== 'PAUSED' ? (
           <span data-tip="Maestro is actively watching this segment">
             <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
-            LAST CHECKED: {segment.monitoring?.lastCheckedAt ? formatRelativeTime(segment.monitoring.lastCheckedAt) : 'just now'}
+            LAST CHECKED: {segment.monitoring?.lastCheckedAt ? (lastCheckedRelative || '…') : 'just now'}
           </span>
         ) : (
           <span data-tip="Maestro is not monitoring this segment">
