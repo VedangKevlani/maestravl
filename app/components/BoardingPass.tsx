@@ -204,7 +204,22 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   const [deleting, setDeleting] = useState(false)
   const [checking, setChecking] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
-  const [reportNewTime, setReportNewTime] = useState(() => toLocalInputValue(segment.departureTime))
+  // Not toLocalInputValue(segment.departureTime) directly as the initial
+  // state — that reads the *runtime's own* local timezone (getHours/
+  // getMinutes, not getUTCHours/getUTCMinutes), which the server (Vercel,
+  // effectively UTC) and a real browser (the passenger's own local zone)
+  // almost never share. A useState lazy initializer runs once during the
+  // very first render on *both* sides, so this produced a different
+  // datetime-local string server-side vs client-side on every single
+  // load — a deterministic hydration mismatch (confirmed live 2026-10-10,
+  // React error #418), not merely the timing-dependent one fixed alongside
+  // this. Empty string first (identical both sides), filled in by an
+  // effect below once mounted — well before the collapsed report panel
+  // this feeds is ever actually opened.
+  const [reportNewTime, setReportNewTime] = useState('')
+  useEffect(() => {
+    setReportNewTime(toLocalInputValue(segment.departureTime))
+  }, [segment.departureTime])
   const [reporting, setReporting] = useState(false)
   const [reportResult, setReportResult] = useState<ReportResult | null>(null)
   const { hasUnseen: hasUnseenUpdates, markSeen: markUpdatesSeen } = useSegmentUnreadUpdates(tripId, segment.id)
