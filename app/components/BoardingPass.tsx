@@ -73,9 +73,18 @@ function formatDateTime(iso: string | null, timezone: string | null = null) {
   return formatFriendlyTime(new Date(iso), timezone)
 }
 
-function formatDateLong(iso: string | null) {
+// No explicit timeZone previously — this is the big "ticket date" shown
+// on every boarding pass, so it's what actually broke hydration: SSR
+// (Vercel, effectively UTC) and a real passenger's browser landed on
+// different calendar dates near midnight, producing "OCTOBER 11, 2026"
+// vs "OCTOBER 12, 2026" for the *same* instant — confirmed via the full
+// (non-minified) hydration diff while reproducing this locally with a
+// forced server/client zone mismatch (2026-10-10). Resolves the
+// segment's real zone the same way formatDateTime/formatFriendlyTime
+// already do just below, instead of trusting the runtime's own.
+function formatDateLong(iso: string | null, timezone: string | null = null) {
   if (!iso) return null
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(iso))
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: timezone ?? 'UTC' }).format(new Date(iso))
 }
 
 const MONITORING_LABEL: Record<string, string> = {
@@ -468,7 +477,7 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                 {segment.provider || segment.transportType} {segment.identifier ? `· ${segment.identifier}` : ''}
               </span>
               <span className={styles.ticketDate}>
-                {segment.departureTime ? formatDateLong(segment.departureTime)?.toUpperCase() : ''}
+                {segment.departureTime ? formatDateLong(segment.departureTime, segmentZones.departure)?.toUpperCase() : ''}
               </span>
             </div>
 
