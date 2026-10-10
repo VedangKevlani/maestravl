@@ -61,8 +61,15 @@ function TripAttentionBanner({ onClick }: { onClick: () => void }) {
   )
 }
 
-function formatDateTime(iso: string) {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
+// No explicit timeZone previously — same deterministic hydration mismatch
+// as TripHeader.tsx/SegmentOverview.tsx (confirmed live 2026-10-10, React
+// error #418): the server's own zone and a real passenger's browser zone
+// essentially never match, and this activity feed is what a passenger
+// lands on specifically *because* the boarding-pass view broke — the
+// Trip Updates tab the user had to check manually. Falls back to UTC,
+// same as the rest of this app's zone-resolution chain.
+function formatDateTime(iso: string, zone: string) {
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date(iso))
 }
 
 const AGENT_STATUS_LABELS: Record<string, string> = {
@@ -79,7 +86,7 @@ const AGENT_STATUS_LABELS: Record<string, string> = {
   SUPERSEDED: 'Superseded by a newer update',
 }
 
-function ActivityFeed({ activity, segmentLabel, onClearFilter }: { activity: ActivityItemDTO[]; segmentLabel?: string; onClearFilter?: () => void }) {
+function ActivityFeed({ activity, segmentLabel, onClearFilter, homeTimezone }: { activity: ActivityItemDTO[]; segmentLabel?: string; onClearFilter?: () => void; homeTimezone: string | null }) {
   return (
     <div>
       {segmentLabel && (
@@ -112,7 +119,7 @@ function ActivityFeed({ activity, segmentLabel, onClearFilter }: { activity: Act
                   {item.segmentLabel}
                 </p>
                 <span className="text-label text-white/25 whitespace-nowrap shrink-0" style={{ fontSize: '0.65rem' }}>
-                  {formatDateTime(item.detectedAt)}
+                  {formatDateTime(item.detectedAt, homeTimezone ?? 'UTC')}
                 </span>
               </div>
               {item.kind === 'status_change' ? (
@@ -239,7 +246,7 @@ export default function TripActivityTabs({
         {tab === 'timeline' ? (
           <Timeline tripId={tripId} segments={segments} passengers={passengers} homeTimezone={homeTimezone} />
         ) : (
-          <ActivityFeed activity={filteredActivity} segmentLabel={segmentFilter ? filteredSegmentLabel : undefined} onClearFilter={clearFilter} />
+          <ActivityFeed activity={filteredActivity} segmentLabel={segmentFilter ? filteredSegmentLabel : undefined} onClearFilter={clearFilter} homeTimezone={homeTimezone} />
         )}
       </div>
     </div>

@@ -10,17 +10,28 @@ import ManagePassengersModal from './ManagePassengersModal'
 import EditPassengerModal from './EditPassengerModal'
 import styles from '../styles/trip.module.css'
 
-function formatMonthDay(d: Date) {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d).toUpperCase()
+// No explicit timeZone previously — Intl.DateTimeFormat then falls back to
+// the *runtime's own* local zone, which the server (Vercel) and a real
+// passenger's browser essentially never share. TripHeader is always
+// rendered (not gated behind any modal), so this was a deterministic
+// hydration mismatch on every single trip-page load whenever the date
+// landed near a day boundary in one zone but not the other (confirmed
+// live 2026-10-10, React error #418) — plus the same "silently shows the
+// wrong zone's date" correctness bug lib/dateFormat.ts exists to prevent
+// elsewhere in this app. Falls back to UTC, same as the rest of this
+// app's zone-resolution chain, only when the passenger hasn't set a home
+// zone yet.
+function formatMonthDay(d: Date, zone: string) {
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: zone }).format(d).toUpperCase()
 }
-function formatMonthDayYear(d: Date) {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d).toUpperCase()
+function formatMonthDayYear(d: Date, zone: string) {
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: zone }).format(d).toUpperCase()
 }
 
 // Mirrors trip.html's #tripSub: "SEPT 1 – SEPT 15, 2026", derived the same
 // way the dashboard card's date range is — earliest departure to latest
 // arrival across segments, since Trip has no startDate/endDate of its own.
-function tripDateRange(segments: TripDTO['segments']) {
+function tripDateRange(segments: TripDTO['segments'], zone: string) {
   const times = segments
     .flatMap((s) => [s.departureTime, s.arrivalTime])
     .filter((d): d is string => d !== null)
@@ -28,7 +39,7 @@ function tripDateRange(segments: TripDTO['segments']) {
   if (times.length === 0) return null
   const start = new Date(Math.min(...times.map((d) => d.getTime())))
   const end = new Date(Math.max(...times.map((d) => d.getTime())))
-  return start.getTime() === end.getTime() ? formatMonthDayYear(start) : `${formatMonthDay(start)} – ${formatMonthDayYear(end)}`
+  return start.getTime() === end.getTime() ? formatMonthDayYear(start, zone) : `${formatMonthDay(start, zone)} – ${formatMonthDayYear(end, zone)}`
 }
 
 function statusPillClass(status: string) {
@@ -52,7 +63,7 @@ export default function TripHeader({ trip, homeTimezone }: { trip: TripDTO; home
   const [savingTitle, setSavingTitle] = useState(false)
 
   const monitoredCount = trip.segments.filter((s) => s.monitoring?.status === 'ACTIVE').length
-  const dateRange = tripDateRange(trip.segments)
+  const dateRange = tripDateRange(trip.segments, homeTimezone ?? 'UTC')
 
   async function saveTitle(e: React.FormEvent) {
     e.preventDefault()

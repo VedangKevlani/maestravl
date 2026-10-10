@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Check, X, Route } from 'lucide-react'
 import { type SegmentDTO } from './types'
 import { TransportTypeIcon } from './transportIcons'
+import { resolveSegmentZones } from '@/lib/dateFormat'
 import styles from '../styles/trip.module.css'
 
 // Mirrors trip.js's SEG_STRIP_MOBILE_QUERY / SEG_STRIP_MOBILE_PAGE_SIZE —
@@ -47,9 +48,20 @@ function useSegStripPaging(count: number) {
   }
 }
 
-function formatTime(iso: string | null) {
-  if (!iso) return '—'
-  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
+// No explicit timeZone previously — Intl.DateTimeFormat then falls back to
+// the *runtime's own* local zone, which the server (Vercel) and a real
+// passenger's browser essentially never share. That's a deterministic
+// hydration mismatch on every single load (confirmed live 2026-10-10,
+// React error #418), not merely a display bug — this is the always-
+// rendered segment-overview strip, so it reproduced on every trip page
+// with at least one segment. Resolves the segment's *real* zone (airport
+// code first, falling back to its manual timezone field) the same way
+// the rest of this app already does via lib/dateFormat.ts, rather than
+// silently trusting whichever zone happens to render it.
+function formatTime(segment: Pick<SegmentDTO, 'departureTime' | 'departureLocationCode' | 'arrivalLocationCode' | 'timezone'>) {
+  if (!segment.departureTime) return '—'
+  const zone = resolveSegmentZones(segment).departure ?? 'UTC'
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date(segment.departureTime))
 }
 
 // A segment "needs attention" for the overview strip's purposes if it's
@@ -115,7 +127,7 @@ export default function SegmentOverview({ segments, onAddSegment }: { segments: 
               <span style={{ color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                 <TransportTypeIcon type={flagged.transportType} size={13} /> {flagged.provider || flagged.transportType}
               </span> at{' '}
-              <span style={{ color: 'var(--amber)' }}>{formatTime(flagged.departureTime)}</span> needs your attention. Click the icon below to jump to it.
+              <span style={{ color: 'var(--amber)' }}>{formatTime(flagged)}</span> needs your attention. Click the icon below to jump to it.
             </p>
           ) : (
             <p>Everything&rsquo;s on track. Maestro is watching your monitored segments.</p>
@@ -151,14 +163,14 @@ export default function SegmentOverview({ segments, onAddSegment }: { segments: 
                     type="button"
                     className={styles.segIconCircle}
                     onClick={() => scrollToSegment(s.id)}
-                    title={`${s.provider || s.transportType} at ${formatTime(s.departureTime)} — ${attention ? 'needs attention' : 'on track'}. Click to jump to it.`}
+                    title={`${s.provider || s.transportType} at ${formatTime(s)} — ${attention ? 'needs attention' : 'on track'}. Click to jump to it.`}
                   >
                     <TransportTypeIcon type={s.transportType} size={16} />
                     <span className={`${styles.segIconCheck} ${attention ? styles.segIconCheckX : ''}`}>
                       {attention ? <X size={11} /> : <Check size={11} />}
                     </span>
                   </button>
-                  <div className={`${styles.segIconTime} ${attention ? styles.segIconTimeAttention : ''}`}>{formatTime(s.departureTime)}</div>
+                  <div className={`${styles.segIconTime} ${attention ? styles.segIconTimeAttention : ''}`}>{formatTime(s)}</div>
                 </div>
               </Fragment>
             )
