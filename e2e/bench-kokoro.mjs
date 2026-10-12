@@ -19,7 +19,7 @@ try {
   console.log('isolated:', await page.evaluate(() => self.crossOriginIsolated))
   for (const [device, dtype] of [['wasm', 'q8'], ['webgpu', 'q8'], ['webgpu', 'fp16'], ['webgpu', 'fp32']]) {
     const r = await page.evaluate(([d, t, text]) => window.__kokoroBench(d, t, text), [device, dtype, TEXT])
-    const runs = r.filter((x) => x.ms).map((x) => `${(x.ms / 1000).toFixed(1)}s for ${x.seconds.toFixed(1)}s audio`)
+    const runs = r.filter((x) => x.ms).map((x) => `${(x.ms / 1000).toFixed(1)}s for ${x.seconds.toFixed(1)}s audio [peak ${x.peak.toFixed(2)} rms ${x.rms.toFixed(3)} nan ${x.nan}]`)
     console.log(`${device}/${dtype}: load ${r[0]?.loadMs ? (r[0].loadMs / 1000).toFixed(1) + 's' : '-'} | ${runs.join(' | ')}${r.find((x) => x.error) ? ' | ERROR ' + r.find((x) => x.error).error.slice(0, 120) : ''}`)
   }
 } finally {

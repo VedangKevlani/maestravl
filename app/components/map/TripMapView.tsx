@@ -93,7 +93,10 @@ export default function TripMapView({ trip, homeTimezone }: { trip: TripDTO; hom
   const mapRef = useRef<MLMap | null>(null)
   const mlRef = useRef<typeof import('maplibre-gl') | null>(null)
   const markersRef = useRef(new Map<string, MLMarker>())
-  const fittedRef = useRef(false)
+  /** Which set of places the camera was last framed on. */
+  const framedKeyRef = useRef('')
+  /** The user has panned/zoomed or picked a segment — stop auto-framing. */
+  const userMovedRef = useRef(false)
   const userPickedRef = useRef(false)
 
   const [ready, setReady] = useState(false)
@@ -226,7 +229,39 @@ export default function TripMapView({ trip, homeTimezone }: { trip: TripDTO; hom
           return
         }
         map.addControl(new ml.NavigationControl({ visualizePitch: true }), 'bottom-left')
+
+        // A drag/scroll/pinch by the user (these carry an originalEvent;
+        // our own flyTo/fitBounds don't) — stop auto-framing from then on.
+        map.on('movestart', (e) => {
+          if ((e as { originalEvent?: unknown }).originalEvent) userMovedRef.current = true
+        })
+
+        // Never fail silently into a black screen: say what went wrong, and
+        // log the technical reason (reported from production 2026-10-12 —
+        // a black map with no explanation).
+        let styleLoaded = false
+        const fail = (message: string, detail: unknown) => {
+          console.error('[map]', message, detail)
+          setMapError(message)
+        }
+        map.on('error', (e) => {
+          // Individual tiles fail now and then (aborted, offline briefly); only
+          // a style that never loads is fatal — the watchdog below covers that.
+          const detail = e as unknown as { error?: Error; sourceId?: string }
+          console.warn('[map] error', detail.sourceId ?? '', detail.error?.message ?? e)
+        })
+        map.getCanvas().addEventListener('webglcontextlost', (e) => {
+          fail("The map's graphics stopped working (the browser lost its WebGL context). Reload the page; if it keeps happening, check that hardware acceleration is on in your browser settings.", e)
+        })
+        const watchdog = window.setTimeout(() => {
+          if (!styleLoaded) fail("The map's background couldn't load. It may be blocked by an ad or content blocker, a firewall, or a slow connection — your trip is still listed below.", 'style.load did not fire within 20s')
+        }, 20_000)
+        map.on('remove', () => window.clearTimeout(watchdog))
+
         map.on('style.load', () => {
+          styleLoaded = true
+          window.clearTimeout(watchdog)
+          setMapError(null)
           map!.setProjection({ type: 'globe' })
           if (!map!.getSource('trip-routes')) {
             map!.addSource('trip-routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
@@ -254,7 +289,10 @@ export default function TripMapView({ trip, homeTimezone }: { trip: TripDTO; hom
         if (process.env.NODE_ENV !== 'production') (window as unknown as { __maestravlMap?: MLMap }).__maestravlMap = map
         setReady(true)
       })
-      .catch(() => setMapError("The map couldn't load. Check your connection and refresh — your trip is still listed below."))
+      .catch((err) => {
+        console.error('[map] failed to load the map library', err)
+        setMapError("The map couldn't load. Check your connection and refresh — your trip is still listed below.")
+      })
     return () => {
       cancelled = true
       markersRef.current.forEach((m) => m.remove())
@@ -353,30 +391,55 @@ export default function TripMapView({ trip, homeTimezone }: { trip: TripDTO; hom
     if (changed) setMarkerSlots([...markersRef.current].map(([key, m]) => ({ key, el: m.getElement() })))
   }, [ready, groups, vehicle?.point.lat, vehicle?.point.lng, live.position, landmarks]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Frame the whole trip once its places are known.
+  /**
+   * Room left for the panels and the pass sheet — clamped to the canvas, so
+   * on a short window the padding can never exceed the map itself (MapLibre
+   * then refuses to fit at all: "Map cannot fit within canvas").
+   */
+  function framePadding(map: MLMap) {
+    const { clientWidth: w, clientHeight: h } = map.getContainer()
+    const want = { top: 90, bottom: sheetHeight + 40, left: 50, right: w > 900 ? 380 : 50 }
+    const scaleV = Math.min(1, (h * 0.6) / (want.top + want.bottom))
+    const scaleH = Math.min(1, (w * 0.6) / (want.left + want.right))
+    return { top: want.top * scaleV, bottom: want.bottom * scaleV, left: want.left * scaleH, right: want.right * scaleH }
+  }
+
+  // Frame the trip, and re-frame as more of its places resolve — airport
+  // codes resolve instantly but hotels, stations and unrecognised codes
+  // (e.g. "NMIA") need an online lookup. Framing once on the first point
+  // zoomed real trips onto one airport at street level, the rest off-screen
+  // (found in production 2026-10-12). Stops once the user moves the map or
+  // picks a segment, so it never fights them.
+  const pendingLookups = [...endpoints.values()].some((e) => (e.fromQuery && !(e.fromQuery in geocoded)) || (e.toQuery && !(e.toQuery in geocoded)))
   useEffect(() => {
     const map = mapRef.current
     const ml = mlRef.current
-    if (!ready || !map || !ml || fittedRef.current || groups.size === 0) return
-    fittedRef.current = true
+    if (!ready || !map || !ml || userMovedRef.current || groups.size === 0) return
+    const key = [...groups.keys()].sort().join('|')
+    if (key === framedKeyRef.current) return
     const points = [...groups.values()].map((g) => g.point)
+    // One place known but others still being looked up: wait, rather than
+    // zoom into that one place and then have to jump back out.
+    if (points.length === 1 && pendingLookups) return
+    framedKeyRef.current = key
     if (points.length === 1) {
       map.flyTo({ center: [points[0].lng, points[0].lat], zoom: 11, duration: 1500 })
       return
     }
     const bounds = new ml.LngLatBounds()
     points.forEach((p) => bounds.extend([p.lng, p.lat]))
-    map.fitBounds(bounds, { padding: { top: 90, bottom: sheetHeight + 40, left: 50, right: window.innerWidth > 900 ? 380 : 50 }, duration: 1500, maxZoom: 9 })
-  }, [ready, groups, sheetHeight])
+    map.fitBounds(bounds, { padding: framePadding(map), duration: 1500, maxZoom: 9 })
+  }, [ready, groups, sheetHeight, pendingLookups]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function select(segmentId: string) {
     userPickedRef.current = true
+    userMovedRef.current = true
     setSelectedId(segmentId)
     const map = mapRef.current
     const ml = mlRef.current
     const s = mapSegments.find((m) => m.id === segmentId)
     if (!map || !ml || !s || !s.from) return
-    const padding = { top: 90, bottom: sheetHeight + 40, left: 50, right: window.innerWidth > 900 ? 380 : 50 }
+    const padding = framePadding(map)
     if (s.to && haversineKm(s.from, s.to) > 0.5) {
       map.fitBounds(new ml.LngLatBounds([s.from.lng, s.from.lat], [s.from.lng, s.from.lat]).extend([s.to.lng, s.to.lat]), { padding, duration: 1200, maxZoom: 12 })
     } else {

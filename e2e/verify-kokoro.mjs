@@ -62,6 +62,7 @@ try {
   await page.waitForFunction(() => window.__maestravlVoice?.firstAudioAt, null, { timeout: 120_000 })
   const spoken = await debug()
   assert(!spoken.kokoroFailed, 'Kokoro synthesis should not fail')
+  assert(!spoken.corruptAudioBlocked, 'audio must pass the safety check (no clipping / blasting)')
   const reply = (await page.locator('[class*=glass-card] p').allInnerTexts()).at(-1)
   console.log(`     maestro: ${reply}`)
   console.log(`ok   Kokoro produced audio ${((spoken.firstAudioAt - spoken.replyAt) / 1000).toFixed(1)}s after the reply arrived (first sentence: ${spoken.firstChunkSeconds.toFixed(1)}s of speech)`)

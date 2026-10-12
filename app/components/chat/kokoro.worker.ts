@@ -110,7 +110,18 @@ ctx.onmessage = (event: MessageEvent<InMessage>) => {
     void load().then(async (tts) => {
       const t0 = performance.now()
       const audio = await tts.generate(msg.text, { voice: VOICE })
-      ctx.postMessage({ type: 'bench', ms: performance.now() - t0, seconds: audio.audio.length / audio.sampling_rate, ...config })
+      const samples = audio.audio as Float32Array
+      let nan = 0
+      let peak = 0
+      let sumSq = 0
+      for (const v of samples) {
+        if (!Number.isFinite(v)) nan++
+        else {
+          peak = Math.max(peak, Math.abs(v))
+          sumSq += v * v
+        }
+      }
+      ctx.postMessage({ type: 'bench', ms: performance.now() - t0, seconds: samples.length / audio.sampling_rate, nan, peak, rms: Math.sqrt(sumSq / samples.length), ...config })
     }, (err) => ctx.postMessage({ type: 'bench', error: String(err) }))
   }
   else if (msg.type === 'speak') void speak(msg.id, msg.text)

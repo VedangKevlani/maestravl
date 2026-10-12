@@ -6,13 +6,20 @@
 //
 // Which backend, from measurements (2026-10-12, Edge, Intel integrated GPU,
 // a ~5 s sentence):
-//   WebGPU, 16-bit (163 MB): ~3.3 s once warm — faster than real time
-//   WebGPU, 32-bit (326 MB): ~3.6 s — twice the download for no gain
-//   WebGPU, 8-bit  ( 92 MB): ~29 s — quantised ops run poorly on GPU
-//   CPU WebAssembly, 8-bit (92 MB): ~15 s, even multi-threaded
-// So: WebGPU + 16-bit where the GPU supports 16-bit shaders. Otherwise the
-// CPU build still works but is slow enough (long silence before each reply)
-// that the device's own voice is the default there; it can be switched on.
+//   WebGPU, 32-bit (326 MB): ~2.2 s once warm — faster than real time
+//   WebGPU, 16-bit (163 MB): ~2.0 s, BUT THE AUDIO IS CORRUPT: peak 1.74
+//     (clipping), twice the loudness — heard in production as a loud
+//     alarm-like noise. Never use 16-bit; kokoro-js itself recommends
+//     32-bit on WebGPU.
+//   WebGPU, 8-bit  ( 92 MB): ~11-29 s — quantised ops run poorly on GPU
+//   CPU WebAssembly, 8-bit (92 MB): ~5-9 s multi-threaded, ~15 s on one thread
+// So: WebGPU + 32-bit where available. Otherwise the CPU build still works
+// but is slow enough that the device's own voice is the default there.
+//
+// Every synthesised chunk is checked before it plays (see isSaneAudio):
+// invalid samples, clipping or abnormal loudness mean it is never played —
+// the reply falls back to the device voice, and a GPU that produced it is
+// remembered as bad in this browser so the CPU build is used from then on.
 //
 // Never makes the user wait for the one-time download: until Kokoro is
 // ready, replies use the device's own voice while it loads in the
@@ -25,7 +32,7 @@ export type VoicePreference = 'natural' | 'device'
 
 export interface KokoroBackend {
   device: 'webgpu' | 'wasm'
-  dtype: 'fp16' | 'q8'
+  dtype: 'fp32' | 'q8'
   /** Approximate one-time download, for the UI. */
   downloadMb: number
   /** Fast enough to be the default (faster than real time). */
@@ -33,8 +40,39 @@ export interface KokoroBackend {
 }
 
 const PREF_KEY = 'maestravl:voice'
-const GPU_BACKEND: KokoroBackend = { device: 'webgpu', dtype: 'fp16', downloadMb: 163, fast: true }
+const GPU_BACKEND: KokoroBackend = { device: 'webgpu', dtype: 'fp32', downloadMb: 326, fast: true }
 const CPU_BACKEND: KokoroBackend = { device: 'wasm', dtype: 'q8', downloadMb: 92, fast: false }
+/** Set when this browser's GPU produced corrupt audio — the CPU build is used from then on. */
+const GPU_BAD_KEY = 'maestravl:kokoroGpuBad'
+
+function gpuMarkedBad(): boolean {
+  try {
+    return localStorage.getItem(GPU_BAD_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Pure — is this synthesised chunk safe to play? Healthy Kokoro output was
+ * measured at peak ≈ 0.4-0.65 and RMS ≈ 0.06-0.07; the corrupt 16-bit
+ * output was peak 1.74 / RMS 0.12, and worse on other GPUs. Limits leave
+ * headroom for natural variation while catching clipping and blasting.
+ */
+export function isSaneAudio(samples: Float32Array): boolean {
+  if (samples.length === 0) return false
+  let peak = 0
+  let sumSq = 0
+  for (let i = 0; i < samples.length; i++) {
+    const v = samples[i]
+    if (!Number.isFinite(v)) return false
+    const a = Math.abs(v)
+    if (a > peak) peak = a
+    sumSq += v * v
+  }
+  const rms = Math.sqrt(sumSq / samples.length)
+  return peak <= 1.0 && rms <= 0.2
+}
 
 interface Snapshot {
   status: KokoroStatus
@@ -70,7 +108,9 @@ function detectBackend(): Promise<KokoroBackend> {
       try {
         const gpu = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<{ features: Set<string> } | null> } }).gpu
         const adapter = gpu ? await gpu.requestAdapter() : null
-        return adapter?.features.has('shader-f16') ? GPU_BACKEND : CPU_BACKEND
+        // 32-bit needs no optional GPU features — any WebGPU adapter will do,
+        // unless this browser's GPU already produced corrupt audio.
+        return adapter && !gpuMarkedBad() ? GPU_BACKEND : CPU_BACKEND
       } catch {
         return CPU_BACKEND
       }
@@ -147,6 +187,21 @@ function ensureWorker(): Worker | null {
   return worker
 }
 
+/** This browser's GPU produced corrupt audio: remember it, drop the GPU model, and use the CPU build from the next reply. */
+function abandonGpuBackend() {
+  try {
+    localStorage.setItem(GPU_BAD_KEY, '1')
+  } catch {
+    /* can't remember — the safety check still catches it next time */
+  }
+  console.warn('[kokoro] GPU output failed the safety check; switching to the CPU voice model')
+  worker?.terminate()
+  worker = null
+  backendPromise = null
+  set({ status: 'idle', progress: 0, backend: CPU_BACKEND })
+  if (snapshot.preference === 'natural') preloadKokoro()
+}
+
 /** Starts the one-time model download/initialisation on the best backend (no-op if already loading or ready). */
 export function preloadKokoro() {
   if (snapshot.status === 'loading' || snapshot.status === 'ready') return
@@ -212,6 +267,23 @@ export function speakWithKokoro(text: string): Promise<void> {
     current = { id, sources, finish }
     handlers.set(id, {
       onAudio: (samples, rate) => {
+        // Never play corrupt output (see isSaneAudio). Stop this reply, let
+        // the caller fall back to the device voice, and if the GPU produced
+        // it, switch this browser to the CPU build from now on.
+        if (!isSaneAudio(samples)) {
+          for (const s of sources) {
+            try {
+              s.stop()
+            } catch {
+              /* not started yet */
+            }
+          }
+          worker?.postMessage({ type: 'cancel', id })
+          recordVoiceDebug({ corruptAudioBlocked: true })
+          if (snapshot.backend?.device === 'webgpu') abandonGpuBackend()
+          handlers.get(id)?.onError('Synthesised audio failed the safety check — not played')
+          return
+        }
         if (sources.length === 0) recordVoiceDebug({ firstAudioAt: Date.now(), firstChunkSeconds: samples.length / rate })
         recordVoiceDebug({ chunks: sources.length + 1 })
         const buffer = ctx.createBuffer(1, samples.length, rate)
