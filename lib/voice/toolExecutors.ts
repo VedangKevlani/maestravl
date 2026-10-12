@@ -8,21 +8,38 @@
 // trip).
 import { segmentLabel } from '@/lib/segmentLabel'
 import { STATUS_COPY, actionLabel } from '@/lib/agents/statusCopy'
+import { resolveSegmentZones, formatFriendlyTime } from '@/lib/dateFormat'
 import { resolveSegment } from './resolveSegment'
 import type { VoiceContext, VoiceSegment } from './types'
 
+// Handing the model a bare UTC ISO string left it to do its own timezone
+// math when speaking a time aloud — unreliable, and the source of a real
+// bug (a 12:00 PM local departure read back as 3:00 PM). Pre-formatting
+// with the segment's actual resolved zone, the same way every other
+// passenger-facing surface does via lib/dateFormat.ts, means the model
+// only ever repeats a time Maestravl already computed, never converts one
+// itself.
 function describeSegment(segment: VoiceSegment) {
+  const zones = resolveSegmentZones(segment)
   return {
     label: segmentLabel(segment),
     transportType: segment.transportType,
     status: segment.status,
     departure:
       segment.departureLocation || segment.departureTime
-        ? { location: segment.departureLocation, code: segment.departureLocationCode, time: segment.departureTime?.toISOString() ?? null }
+        ? {
+            location: segment.departureLocation,
+            code: segment.departureLocationCode,
+            time: segment.departureTime ? formatFriendlyTime(segment.departureTime, zones.departure) : null,
+          }
         : null,
     arrival:
       segment.arrivalLocation || segment.arrivalTime
-        ? { location: segment.arrivalLocation, code: segment.arrivalLocationCode, time: segment.arrivalTime?.toISOString() ?? null }
+        ? {
+            location: segment.arrivalLocation,
+            code: segment.arrivalLocationCode,
+            time: segment.arrivalTime ? formatFriendlyTime(segment.arrivalTime, zones.arrival) : null,
+          }
         : null,
     confirmationNumber: segment.confirmationNumber,
     notes: segment.notes,
