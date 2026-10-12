@@ -20,12 +20,11 @@
 // app/api/webhooks/resend-inbound (see lib/agents/inboundReply.ts) — every
 // provider-facing email's Reply-To is a per-Communication address (see
 // lib/inboundReplyAddress.ts) so a reply can be matched back here without
-// relying on undocumented email threading headers. A reply moves the run
-// to ACTION_REQUIRED, not straight to CONFIRMED/RESCHEDULING — Maestravl
-// can read that a reply arrived, not what it actually says (no LLM
-// interpreting the content), so the passenger reads it and decides what it
-// means, per spec section 20 (never claim a resolution that wasn't
-// verified).
+// relying on undocumented email threading headers. A reply never moves the
+// run straight to CONFIRMED — a likely-yes read (lib/agents/
+// replyInterpretation.ts) moves it to RESCHEDULING, anything else to
+// ACTION_REQUIRED, and the passenger confirms what it means, per spec
+// section 20 (never claim a resolution that wasn't verified).
 
 import { prisma } from '@/lib/db'
 import { sendDisruptionImpactEmail } from '@/lib/email'

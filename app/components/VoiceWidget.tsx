@@ -2,6 +2,8 @@
 import { Mic } from 'lucide-react'
 import { useVoiceTurn } from './chat/useVoiceTurn'
 import { useSpeechCapture } from './chat/useSpeechCapture'
+import ProposedActionCard from './chat/ProposedActionCard'
+import { unlockAudio } from './chat/useKokoro'
 import styles from '../styles/trip.module.css'
 
 export default function VoiceWidget({ tripId }: { tripId: string }) {
@@ -41,12 +43,17 @@ export default function VoiceWidget({ tripId }: { tripId: string }) {
           {lastAssistant && (
             <div className={styles.replyText}>{lastAssistant.content}</div>
           )}
+          {lastAssistant?.proposedAction && (
+            <div className="mt-2">
+              <ProposedActionCard key={messages.lastIndexOf(lastAssistant)} action={lastAssistant.proposedAction} />
+            </div>
+          )}
         </div>
       )}
 
       {/* Mic button */}
       <button
-        onClick={toggleListening}
+        onClick={() => { unlockAudio(); toggleListening() }}
         disabled={isThinking || !supported}
         aria-label={label}
         data-tip={label}

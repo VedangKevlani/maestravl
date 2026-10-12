@@ -1,3 +1,4 @@
+import type { PendingContactApproval } from '@/lib/agents/pendingApprovals'
 // Plain, JSON-serializable shapes used by client components — mirrors the
 // Prisma models but with Date fields as ISO strings (what actually crosses
 // the server/client boundary), and no Prisma runtime imports.
@@ -57,13 +58,7 @@ export interface ActiveRunDTO {
    * (approve or decline) has been made, or if there was never one to begin
    * with.
    */
-  pendingContactApproval: {
-    communicationId: string
-    contactValue: string
-    channel: string
-    confidence: number
-    source: string
-  } | null
+  pendingContactApproval: PendingContactApproval | null
 }
 
 export interface PassengerDTO {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeDisruptionReason, composeRescheduleRequest, composeAwarenessInquiry } from './message'
+import { describeDisruptionReason, composeRescheduleRequest, composeAwarenessInquiry, composeFollowUp } from './message'
 
 describe('describeDisruptionReason', () => {
   it('describes a cancellation', () => {
@@ -131,5 +131,22 @@ describe('composeAwarenessInquiry', () => {
     expect(subject).toContain('Ocean Grill dinner reservation')
     expect(body).toContain('XJ7K2P')
     expect(body.toLowerCase()).not.toContain('confirmed')
+  })
+})
+
+describe('composeFollowUp', () => {
+  const sentAt = new Date('2026-08-14T13:00:00Z')
+
+  it('quotes the original message in full and keeps it a request, never a confirmation', () => {
+    const msg = composeFollowUp({ originalSubject: 'Request to reschedule — AA655', originalBody: 'Hello,\nCan this move?', sentAt, timezone: 'America/New_York' })
+    expect(msg.subject).toBe('Following up — Request to reschedule — AA655')
+    expect(msg.body).toContain('> Hello,')
+    expect(msg.body).toContain('> Can this move?')
+    expect(msg.body).toContain('9:00 AM, New York time')
+    expect(msg.body.toLowerCase()).not.toContain('confirmed')
+  })
+
+  it('does not stack "Re:" prefixes from the original subject', () => {
+    expect(composeFollowUp({ originalSubject: 'Re: RE: Booking', originalBody: 'x', sentAt, timezone: null }).subject).toBe('Following up — Booking')
   })
 })

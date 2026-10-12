@@ -83,10 +83,16 @@ export default function SegmentModal({ tripId, passengers, segment, open, onClos
 
   // Reset local passenger selection whenever the modal opens (fresh dialog
   // each time) or the segment being edited changes — without this, the
-  // state from a previous open would leak into the next one.
+  // state from a previous open would leak into the next one. Keyed on the
+  // segment's id, not the `segment`/`passengers` objects themselves: the
+  // trip page re-fetches every few seconds (Timeline's poll), which hands
+  // this component fresh-but-identical objects, and depending on those
+  // wiped the passenger's in-progress checkbox changes within seconds.
+  const segmentId = segment?.id ?? null
   useEffect(() => {
     if (open) setPassengerIds(segment?.passengerIds ?? passengers.map((p) => p.id))
-  }, [open, segment, passengers])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: deliberately not on object identity
+  }, [open, segmentId])
 
   // Close on Escape key
   useEffect(() => {

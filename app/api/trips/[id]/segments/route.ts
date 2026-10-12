@@ -59,9 +59,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // always true (everyone's on the same itinerary), and means a segment
   // never silently starts with nobody to notify if it's disrupted. Only
   // used when the caller didn't explicitly choose a subset.
+  // An explicit subset is filtered to passengers that actually belong to
+  // this trip — same rule as PATCH /api/segments/[id] — so a client can't
+  // link (and then read back) another trip's passenger by id.
+  const tripPassengerIds = (await prisma.passenger.findMany({ where: { tripId }, select: { id: true } })).map((p) => p.id)
   const passengerIds = data.passengerIds?.length
-    ? data.passengerIds
-    : (await prisma.passenger.findMany({ where: { tripId }, select: { id: true } })).map((p) => p.id)
+    ? data.passengerIds.filter((pid) => tripPassengerIds.includes(pid))
+    : tripPassengerIds
 
   const segment = await prisma.segment.create({
     data: {

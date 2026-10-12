@@ -11,7 +11,7 @@
 // component and SegmentCard.tsx (a client component), and unit-testable.
 //
 // Uses NEXT_PUBLIC_UBER_CLIENT_ID rather than a server-only var (unlike
-// every other isXConfigured() in this codebase, e.g. lib/voice/tts.ts) —
+// every other isXConfigured() in this codebase, e.g. lib/voice/agent.ts) —
 // it needs to run client-side, and unlike a real API key this client_id
 // isn't a secret: it's a plain GET parameter, visible in the link itself
 // the moment someone clicks it, so bundling it costs nothing.

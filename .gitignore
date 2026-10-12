@@ -58,3 +58,6 @@ e2e/fixtures/*.pdf
 
 # tesseract.js language-model cache (downloaded on first OCR run)
 *.traineddata
+
+# Copied from node_modules on install (scripts/copy-vendor-assets.mjs)
+/public/vendor/

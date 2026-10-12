@@ -44,19 +44,27 @@ function getIcon(type: string) {
 export default function SegmentUpdatesModal({ segmentId, segmentName, tripId, isOpen, onClose }: Props) {
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(false)
+  // Distinct from "no activity" — treating a failed load as an empty feed
+  // is what let a missing API route go unnoticed: the modal just said "No
+  // updates logged" while a recovery was actively running.
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     if (!isOpen || !tripId) return
     setLoading(true)
+    setLoadFailed(false)
     fetch(`/api/trips/${tripId}/activities`)
-      .then((res) => (res.ok ? res.json() : { activities: [] }))
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then((data) => {
         const filtered = segmentId
           ? (data.activities || []).filter((a: ActivityItem) => a.segmentId === segmentId)
           : data.activities || []
         setActivities(filtered)
       })
-      .catch(() => setActivities([]))
+      .catch(() => { setActivities([]); setLoadFailed(true) })
       .finally(() => setLoading(false))
   }, [isOpen, tripId, segmentId])
 
@@ -82,6 +90,11 @@ export default function SegmentUpdatesModal({ segmentId, segmentName, tripId, is
 
           {loading ? (
             <p style={{ color: 'var(--muted)', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Loading segment updates…</p>
+          ) : loadFailed ? (
+            <div role="alert" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted)' }}>
+              <AlertTriangle size={24} style={{ margin: '0 auto 8px', opacity: 0.6 }} />
+              <p style={{ fontSize: '13px' }}>Couldn&rsquo;t load this segment&rsquo;s updates. Check your connection, then close and reopen this to try again.</p>
+            </div>
           ) : activities.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted)' }}>
               <Bell size={24} style={{ margin: '0 auto 8px', opacity: 0.5 }} />

@@ -20,8 +20,7 @@ import {
 import styles from '../styles/segmentModal.module.css'
 import SegmentPreview from './SegmentPreview'
 import { getFieldProfile } from './segmentFieldProfiles'
-import { toLocalInputValue } from './dateInput'
-import { zonedDateTimeToUtc } from '@/lib/dateFormat'
+import { zonedDateTimeToUtc, utcToZonedDateTimeParts, segmentEntryZones, friendlyZoneLabel } from '@/lib/dateFormat'
 import type { SegmentDTO } from './types'
 
 interface Props {
@@ -38,14 +37,8 @@ interface Props {
   afterPreview?: (monitor: { enabled: boolean; setEnabled: (v: boolean) => void }) => React.ReactNode
 }
 
-// Splits an ISO datetime into the separate <input type="date"> /
-// <input type="time"> values this form uses, in the browser's local time —
-// mirrors what toLocalInputValue does for a single datetime-local input.
-function splitLocalDateTime(iso: string | null): { date: string; time: string } {
-  const local = toLocalInputValue(iso) // 'YYYY-MM-DDTHH:mm' or ''
-  if (!local) return { date: '', time: '' }
-  const [date, time] = local.split('T')
-  return { date: date ?? '', time: time ?? '' }
+function browserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
 type Subtab = 'transport' | 'datetime' | 'provider'
@@ -80,8 +73,14 @@ const TYPE_OPTIONS: TransportTypeOption[] = [
 export default function TransportTypeForm({ tripId, segment, passengerIds, onCreated, afterPreview }: Props) {
   const router = useRouter()
   const isEditing = Boolean(segment)
-  const initialDep = splitLocalDateTime(segment?.departureTime ?? null)
-  const initialArr = splitLocalDateTime(segment?.arrivalTime ?? null)
+  // Prefilled in exactly the zones onSubmit parses with (see entryZones
+  // below) — the timezone field starts as segment.timezone, or the
+  // browser's zone when auto-detect starts checked (no stored timezone).
+  const initialZones = segment
+    ? segmentEntryZones({ ...segment, timezone: segment.timezone || browserTimezone() })
+    : { departure: null, arrival: null }
+  const initialDep = utcToZonedDateTimeParts(segment?.departureTime ?? null, initialZones.departure)
+  const initialArr = utcToZonedDateTimeParts(segment?.arrivalTime ?? null, initialZones.arrival)
 
   const [activeTab, setActiveTab] = useState<Subtab>('transport')
   const [transportType, setTransportType] = useState(segment?.transportType ?? 'FLIGHT')
@@ -125,20 +124,20 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
     // this, the picked/typed zone was stored as metadata but never actually
     // affected how the date/time inputs got parsed, silently anchoring
     // every departure/arrival to the browser or server's own zone instead
-    // (found via live testing 2026-08-12/13).
-    const effectiveTimezone = timezone.trim() || (autoTimezone ? Intl.DateTimeFormat().resolvedOptions().timeZone : null)
-
+    // (found via live testing 2026-08-12/13). An endpoint's own airport
+    // zone wins over the field when it's known, matching how the boarding
+    // pass displays the time (see entryZones / segmentEntryZones).
     let departureDateTimeISO: string | undefined = undefined
     if (depDate) {
       const timeStr = depTime || '00:00'
-      const d = zonedDateTimeToUtc(depDate, timeStr, effectiveTimezone)
+      const d = zonedDateTimeToUtc(depDate, timeStr, entryZones.departure)
       if (!isNaN(d.getTime())) departureDateTimeISO = d.toISOString()
     }
 
     let arrivalDateTimeISO: string | undefined = undefined
     if (arrDate) {
       const timeStr = arrTime || '00:00'
-      const d = zonedDateTimeToUtc(arrDate, timeStr, effectiveTimezone)
+      const d = zonedDateTimeToUtc(arrDate, timeStr, entryZones.arrival)
       if (!isNaN(d.getTime())) arrivalDateTimeISO = d.toISOString()
     }
 
@@ -158,7 +157,7 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
       arrivalLocation: arrLocation.trim() || empty,
       arrivalLocationCode: arrCode.trim() ? arrCode.trim().toUpperCase() : empty,
       arrivalTime: arrivalDateTimeISO ?? empty,
-      timezone: timezone.trim() || (autoTimezone ? Intl.DateTimeFormat().resolvedOptions().timeZone : empty),
+      timezone: timezone.trim() || (autoTimezone ? browserTimezone() : empty),
       seat: seat.trim() || empty,
       cabin: cabin.trim() || roomType.trim() || empty,
       confirmationNumber: confirmationNumber.trim() || empty,
@@ -188,6 +187,16 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
     if (onCreated) onCreated()
     router.refresh()
   }
+
+  // The zones the date/time inputs are read in, recomputed live as the
+  // passenger edits the airport codes or timezone field — also what the
+  // hint under the time inputs tells them.
+  const effectiveTimezone = timezone.trim() || (autoTimezone ? browserTimezone() : null)
+  const entryZones = segmentEntryZones({
+    departureLocationCode: depCode.trim() || null,
+    arrivalLocationCode: arrCode.trim() || null,
+    timezone: effectiveTimezone,
+  })
 
   const prof = getFieldProfile(transportType)
 
@@ -225,6 +234,12 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
     (!hasRoute || arrLocation.trim() !== '')
   // Provider tab: provider name is the only required field
   const providerComplete = provider.trim() !== ''
+  const missingFields = [
+    depLocation.trim() === '' && `${(originLabel || 'origin').toLowerCase()} (Date & Time)`,
+    (depDate.trim() === '' || depTime.trim() === '') && `${(depTimeLabel || 'departure time').toLowerCase()} (Date & Time)`,
+    hasRoute && arrLocation.trim() === '' && `${(destLabel || 'destination').toLowerCase()} (Date & Time)`,
+    !providerComplete && 'provider name (Provider tab)',
+  ].filter((f): f is string => Boolean(f))
 
   // Preview address strings
   const previewOrigin = hasRoute
@@ -493,8 +508,19 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
             </div>
           )}
 
+          {(depDate || arrDate) && (
+            <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '-4px 0 14px' }}>
+              Enter times as shown on your booking — {depTimeLabel ? depTimeLabel.toLowerCase() : 'departure'} in{' '}
+              {friendlyZoneLabel(entryZones.departure)}
+              {hasArrivalTime && arrTimeLabel && entryZones.arrival !== entryZones.departure
+                ? `, ${arrTimeLabel.toLowerCase()} in ${friendlyZoneLabel(entryZones.arrival)}`
+                : ''}
+              .
+            </p>
+          )}
+
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>My Timezone</span>
+            <span className={styles.fieldLabel}>Timezone (used when there&rsquo;s no airport code)</span>
             <input
               type="text"
               className={styles.textInput}
@@ -670,6 +696,15 @@ export default function TransportTypeForm({ tripId, segment, passengerIds, onCre
       )}
 
       {error && <div className={styles.error}>{error}</div>}
+
+      {/* The submit button used to just grey out with no reason given —
+          e.g. an imported segment the parser found no provider for could
+          never be saved, and nothing said why. */}
+      {missingFields.length > 0 && (
+        <p style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'right', marginBottom: '8px' }}>
+          Still needed: {missingFields.join(', ')}
+        </p>
+      )}
 
       <div className={styles.footer}>
         <button type="submit" disabled={submitting || !datetimeComplete || !providerComplete} className={styles.primaryBtn}>

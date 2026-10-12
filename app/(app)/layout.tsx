@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { auth, signOut } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { isAdminEmail } from '@/lib/admin'
 import AuthSessionProvider from '../components/AuthSessionProvider'
 import AppHeader from '../components/AppHeader'
 import { OnboardingProvider } from '../components/onboarding/OnboardingProvider'
@@ -13,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth()
   if (!session?.user) redirect('/login')
 
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { onboardingCompletedAt: true } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { onboardingCompletedAt: true, name: true } })
 
   async function handleSignOut() {
     'use server'
@@ -25,7 +26,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <OnboardingProvider showByDefault={!user?.onboardingCompletedAt}>
         <ChatProvider>
           <div className={styles.page}>
-            <AppHeader userEmail={session.user.email ?? ''} signOutAction={handleSignOut} />
+            <AppHeader
+              userName={user?.name ?? session.user.name ?? ''}
+              userEmail={session.user.email ?? ''}
+              isAdmin={isAdminEmail(session.user.email)}
+              signOutAction={handleSignOut}
+            />
             <main className={styles.main}>{children}</main>
           </div>
           <OnboardingOverlay />

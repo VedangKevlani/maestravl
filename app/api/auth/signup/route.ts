@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { hitRateLimit, clientIp, formatRetryAfter, SIGNUPS_PER_IP } from '@/lib/security/rateLimit'
 
 const SignupSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -10,6 +11,17 @@ const SignupSchema = z.object({
 })
 
 export async function POST(req: Request) {
+  // Counted per IP on every attempt (not just successes) — bounds both mass
+  // account creation and using this endpoint's 409 to probe which emails
+  // already have accounts.
+  const limited = await hitRateLimit(`signup:ip:${clientIp(req.headers)}`, SIGNUPS_PER_IP)
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: `Too many sign-up attempts from this network. Please try again in ${formatRetryAfter(limited.retryAfterSeconds)}.` },
+      { status: 429, headers: { 'Retry-After': String(limited.retryAfterSeconds) } }
+    )
+  }
+
   const json = await req.json().catch(() => null)
   const parsed = SignupSchema.safeParse(json)
   if (!parsed.success) {

@@ -430,3 +430,16 @@ model Alternative {
 
   createdAt DateTime @default(now())
 }
+
+// Fixed-window counters for abuse-prone public endpoints (login, signup,
+// password reset) — see lib/security/rateLimit.ts. Lives in the database
+// because Vercel's serverless instances share no memory, so an in-process
+// counter would reset on every cold start and differ per instance. One
+// row per key (e.g. "login:email:a@b.com"); stale rows are swept by the
+// monitoring cron.
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime
+  updatedAt   DateTime @updatedAt
+}

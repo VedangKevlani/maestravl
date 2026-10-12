@@ -1,11 +1,10 @@
-import { auth } from '@/lib/auth'
+import { requirePageUserId } from '@/lib/pageAuth'
 import { prisma } from '@/lib/db'
 import NotificationsList from '../../components/NotificationsList'
 import styles from '../../styles/notifications.module.css'
 
 export default async function NotificationsPage() {
-  const session = await auth()
-  const userId = session!.user.id
+  const userId = await requirePageUserId()
 
   const logs = await prisma.notificationLog.findMany({
     where: { trip: { userId } },

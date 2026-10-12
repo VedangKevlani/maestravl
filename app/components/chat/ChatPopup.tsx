@@ -1,31 +1,95 @@
 'use client'
-// Floating "Chat with Maestro" popup — ported from modals/chat/chat-popup.*.
+// Floating "Chat with Maestro" popup, available on every page.
 // Reads its own open/tripId state from ChatProvider (same pattern
 // OnboardingOverlay uses for onboarding state) rather than taking props,
 // so it can be mounted once at the (app) layout level and stay correct
 // across client-side nav.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { tripFromPath } from '../tripPath'
 import { X, Mic, Send } from 'lucide-react'
 import { UserTieIcon } from '../UserTieIcon'
 import styles from '../../styles/chatPopup.module.css'
 import { useChat } from './ChatProvider'
 import { useVoiceTurn } from './useVoiceTurn'
+import { useKokoro, setVoicePreference, preloadKokoro, unlockAudio } from './useKokoro'
+
+/**
+ * Natural voice (Kokoro, runs in this browser) vs the device's own voice.
+ * Shows the one-time download's progress so a delay never looks broken.
+ */
+function VoiceSwitch() {
+  const voice = useKokoro()
+  // Chat opened with the natural voice wanted: start loading it now, so it's
+  // ready by the time the first reply needs speaking.
+  useEffect(() => {
+    if (voice.preference === 'natural') preloadKokoro()
+  }, [voice.preference])
+  if (!voice.supported) return null
+
+  const percent = Math.round(voice.progress * 100)
+  const note =
+    voice.preference !== 'natural'
+      ? null
+      : voice.status === 'loading'
+        ? `Downloading natural voice… ${percent}% (one-time, about ${voice.approxDownloadMb} MB). Using your device's voice until it's ready.`
+        : voice.status === 'error'
+          ? "The natural voice couldn't load — using your device's voice."
+          : voice.slow
+            ? 'This device has no fast graphics support for the natural voice, so replies may take a while to start speaking.'
+            : null
+
+  return (
+    <div style={{ padding: '8px 20px 0', fontSize: '11px', color: 'var(--muted)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} role="group" aria-label="Assistant voice">
+        <span>Voice:</span>
+        {(['natural', 'device'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={voice.preference === v}
+            onClick={() => {
+              unlockAudio()
+              setVoicePreference(v)
+            }}
+            title={v === 'natural' ? `Kokoro — a natural voice that runs in your browser (one-time ~${voice.approxDownloadMb} MB download)` : "Your device's built-in voice"}
+            className="rounded-full px-2 py-0.5"
+            style={{
+              border: '1px solid rgba(255,255,255,0.15)',
+              background: voice.preference === v ? 'rgba(143,193,128,0.18)' : 'transparent',
+              color: voice.preference === v ? '#cfe0c8' : 'inherit',
+            }}
+          >
+            {v === 'natural' ? 'Natural' : 'Device'}
+          </button>
+        ))}
+      </div>
+      {note && (
+        <p role="status" style={{ marginTop: 4 }}>
+          {note}
+        </p>
+      )}
+    </div>
+  )
+}
 import { useSpeechCapture } from './useSpeechCapture'
 import { ChatBubble } from './ChatBubble'
+import ProposedActionCard from './ProposedActionCard'
 import { useDraggable } from './useDraggable'
 
 export default function ChatPopup() {
-  const { open, tripId, close } = useChat()
-
-  // tripId is only null before a trip page has ever opened the popup —
-  // once open is true, ChatProvider.toggle always supplied a tripId, so
-  // this early return is the only place that matters.
-  if (!open || !tripId) return null
-
+  const { open, close } = useChat()
+  // The trip page you're on is the assistant's default focus; anywhere
+  // else it works across all your trips.
+  const { tripId } = tripFromPath(usePathname())
+  if (!open) return null
   return <ChatPopupInner tripId={tripId} onClose={close} />
 }
 
-function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => void }) {
+const SUGGESTIONS_ON_TRIP = ["What's next on this trip?", "What's the weather where I'm going?", 'Anything wrong with my itinerary?', 'Open the map']
+const SUGGESTIONS_ANYWHERE = ['What needs my attention?', "When's my next trip?", 'What time is it in Jamaica?', 'Convert 100 USD to JMD']
+
+function ChatPopupInner({ tripId, onClose }: { tripId: string | null; onClose: () => void }) {
   const { state, errorMessage, messages, sendTurn } = useVoiceTurn(tripId)
   const [inputValue, setInputValue] = useState('')
   const popupRef = useRef<HTMLDivElement>(null)
@@ -61,11 +125,48 @@ function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => vo
         </button>
       </div>
 
+      <VoiceSwitch />
+
       <div className={styles.body}>
         {messages.length === 0 ? (
-          <p className={styles.empty}>Ask Maestro anything about this trip.</p>
+          <div>
+            <p className={styles.empty}>
+              {tripId
+                ? 'Ask about this trip, any of your other trips, or the places you’re going.'
+                : 'Ask about your trips, what needs your attention, or the places you’re going.'}
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2.5">
+              {(tripId ? SUGGESTIONS_ON_TRIP : SUGGESTIONS_ANYWHERE).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="rounded-full px-2.5 py-1 text-white/70 hover:text-white"
+                  style={{ fontSize: '11.5px', border: '1px solid rgba(255,255,255,0.15)' }}
+                  disabled={state === 'thinking' || state === 'speaking'}
+                  onClick={() => sendTurn(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : (
-          messages.map((m, i) => <ChatBubble key={i} role={m.role} content={m.content} />)
+          messages.map((m, i) => (
+            <div key={i} className="flex flex-col gap-2">
+              <ChatBubble role={m.role} content={m.content} />
+              {m.proposedAction && <ProposedActionCard action={m.proposedAction} />}
+              {m.attributions && m.attributions.length > 0 && (
+                <p className="text-white/35" style={{ fontSize: '10.5px' }}>
+                  {m.attributions.map((a, j) => (
+                    <span key={a.url}>
+                      {j > 0 && ' · '}
+                      <a href={a.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-white/60">{a.text}</a>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          ))
         )}
       </div>
 
@@ -76,7 +177,7 @@ function ChatPopupInner({ tripId, onClose }: { tripId: string; onClose: () => vo
           aria-label={!micSupported ? 'Voice input is not supported in this browser — try Chrome or Edge' : listening ? 'Stop listening' : 'Click to speak to Maestro'}
           title={!micSupported ? 'Voice input is not supported in this browser — try Chrome or Edge' : listening ? 'Stop listening' : 'Click to speak to Maestro'}
           disabled={!micSupported || state === 'thinking' || state === 'speaking'}
-          onClick={toggleListening}
+          onClick={() => { unlockAudio(); toggleListening() }}
         >
           <Mic size={14} />
         </button>

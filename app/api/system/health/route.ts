@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireUserId } from '@/lib/apiAuth'
+import { requireAdmin } from '@/lib/apiAuth'
 
 // A standing, evidence-based answer to "does this integration actually
 // work," not just "is the env var set." Every previous answer to that
 // question was a one-time manual test with no lasting record. This route
 // never returns secret values — only booleans, counts, and timestamps —
-// and is gated the same as every other authenticated route (there's no
-// admin role in this app).
+// but the counts span every account, so it's developer-only
+// (ADMIN_EMAILS, see lib/admin.ts), not visible to travellers.
 //
 // "configured" means the required env var(s) are present. "confirmed"
 // means real evidence was found in the database that the integration has
@@ -15,7 +15,7 @@ import { requireUserId } from '@/lib/apiAuth'
 // something works in production rather than assuming a key being set is
 // enough.
 export async function GET() {
-  const auth = await requireUserId()
+  const auth = await requireAdmin()
   if ('error' in auth) return auth.error
 
   const [
@@ -144,10 +144,10 @@ export async function GET() {
     },
     {
       id: 'voice-tts',
-      label: 'Voice assistant premium TTS (ElevenLabs)',
-      configured: has('ELEVENLABS_API_KEY') && has('ELEVENLABS_VOICE_ID'),
+      label: 'Natural voice (Kokoro, in the browser)',
+      configured: true,
       confirmed: null,
-      evidence: 'Optional — falls back to the browser\'s own voice when unset',
+      evidence: "Runs on each user's device — no server key or cost. One-time ~92 MB model download per browser; falls back to the device voice until loaded.",
     },
   ]
 

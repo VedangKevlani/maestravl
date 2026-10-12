@@ -30,15 +30,35 @@ interface ActivityLike {
   createdAt: string
 }
 
-/** Polls this trip's activity feed, filters to one segment, and reports whether there's anything newer than what's already been seen. */
-export function useSegmentUnreadUpdates(tripId: string, segmentId: string) {
+// Every BoardingPass on a trip mounts this hook at once, and the feed is
+// trip-wide — share one in-flight request per trip (briefly cached) rather
+// than sending one identical request per segment.
+const SHARED_FETCH_TTL_MS = 3000
+let sharedFetch: { key: string; at: number; promise: Promise<{ activities?: ActivityLike[] }> } | null = null
+
+function fetchTripActivities(tripId: string) {
+  if (sharedFetch && sharedFetch.key === tripId && Date.now() - sharedFetch.at < SHARED_FETCH_TTL_MS) {
+    return sharedFetch.promise
+  }
+  const promise = fetch(`/api/trips/${tripId}/activities`).then((res) => (res.ok ? res.json() : { activities: [] }))
+  sharedFetch = { key: tripId, at: Date.now(), promise }
+  return promise
+}
+
+/**
+ * Reads this trip's activity feed, filters to one segment, and reports
+ * whether there's anything newer than what's already been seen. Refetches
+ * whenever `refreshKey` changes — pass something that changes when this
+ * segment gets new activity (e.g. its recovery run's status/summary), so
+ * the dot can light up for updates that land while the page is open.
+ */
+export function useSegmentUnreadUpdates(tripId: string, segmentId: string, refreshKey = '') {
   const [hasUnseen, setHasUnseen] = useState(false)
   const [latestCreatedAt, setLatestCreatedAt] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/trips/${tripId}/activities`)
-      .then((res) => (res.ok ? res.json() : { activities: [] }))
+    fetchTripActivities(tripId)
       .then((data) => {
         if (cancelled) return
         const items: ActivityLike[] = (data.activities || []).filter(
@@ -52,7 +72,7 @@ export function useSegmentUnreadUpdates(tripId: string, segmentId: string) {
       })
       .catch(() => { /* silently no dot if this fails — non-critical */ })
     return () => { cancelled = true }
-  }, [tripId, segmentId])
+  }, [tripId, segmentId, refreshKey])
 
   function markSeen() {
     setHasUnseen(false)

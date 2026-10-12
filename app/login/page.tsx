@@ -22,7 +22,11 @@ function LoginForm() {
     const res = await signIn('credentials', { email, password, redirect: false })
     setLoading(false)
     if (res?.error) {
-      setError('Incorrect email or password')
+      setError(
+        res.code === 'rate_limited'
+          ? 'Too many unsuccessful sign-in attempts. For your security, please wait about 15 minutes and try again — or reset your password.'
+          : 'Incorrect email or password'
+      )
       return
     }
     router.push(params.get('callbackUrl') || '/dashboard')

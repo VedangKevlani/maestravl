@@ -102,3 +102,36 @@ export function composeAwarenessInquiry(input: {
 
   return { subject, body }
 }
+
+/**
+ * A short, polite nudge when a provider hasn't answered — drafted by
+ * lib/agents/followUp.ts and, like every outbound message, sent only after
+ * the passenger approves it. Quotes the original request in full so the
+ * provider doesn't have to dig for context, and stays a request: it never
+ * implies anything was agreed.
+ */
+export function composeFollowUp(input: {
+  originalSubject: string | null
+  originalBody: string
+  sentAt: Date
+  /** The segment's own zone, so "we wrote on…" reads in the provider's local time. */
+  timezone: string | null
+}): ComposedMessage {
+  const subjectBase = input.originalSubject?.replace(/^(re:\s*)+/i, '') || 'our earlier request'
+  const subject = `Following up — ${subjectBase}`
+
+  const body = [
+    'Hello,',
+    '',
+    `We wrote on ${formatTime(input.sentAt, input.timezone)} about the booking below and haven't heard back yet. Our passenger's plans depend on it, so we'd be grateful for a reply when you have a moment — even a quick note on whether the change is possible.`,
+    '',
+    'Our original message, for reference:',
+    '',
+    ...input.originalBody.split('\n').map((line) => `> ${line}`),
+    '',
+    'Thank you,',
+    'Maestravl, coordinating on behalf of the passenger',
+  ].join('\n')
+
+  return { subject, body }
+}

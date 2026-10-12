@@ -21,6 +21,7 @@ function makeSegment(overrides: Partial<VoiceSegment>): VoiceSegment {
     timezone: null,
     monitoringStatus: null,
     monitoringCheckedAt: null,
+    monitoringActive: false,
     ...overrides,
   }
 }

@@ -1,7 +1,7 @@
 // SMS + WhatsApp notifications via Twilio's Messages API — a plain fetch
 // call, no `twilio` npm dependency, same convention as every other external
 // integration in this codebase except @google/genai and Resend/Supabase
-// (see lib/voice/tts.ts, lib/agents/minimaxSearch.ts, the monitoring
+// (see lib/agents/minimaxSearch.ts, the monitoring
 // adapters). Exists alongside lib/email.ts, not instead of it: a passenger
 // who's overwhelmed mid-disruption or has no signal may never see an email
 // in time, so every passenger-facing notification site attempts every

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent,
@@ -7,6 +7,8 @@ import {
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import BoardingPass from './BoardingPass'
 import type { PassengerDTO, SegmentDTO } from './types'
+import { checkItinerary } from '@/lib/itinerary/sanity'
+import { displaySegmentLabel } from '@/lib/segmentLabel'
 import styles from '../styles/trip.module.css'
 
 // How often the boarding passes re-pull the page's server data while open,
@@ -28,12 +30,22 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
   }, [segments])
 
   // Skipped mid-drag so a poll landing between pointerdown and drop can't
-  // yank the list out from under a reorder in progress.
+  // yank the list out from under a reorder in progress. Also skipped while
+  // the tab is hidden — each tick re-runs the whole trip page's server
+  // queries, and a background tab nobody is looking at doesn't need them —
+  // with an immediate refresh on return so the view is never stale.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!saving) router.refresh()
+      if (!saving && document.visibilityState === 'visible') router.refresh()
     }, REFRESH_POLL_MS)
-    return () => clearInterval(timer)
+    function onVisibilityChange() {
+      if (!saving && document.visibilityState === 'visible') router.refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [router, saving])
 
   const sensors = useSensors(
@@ -66,6 +78,7 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
 
   return (
     <div data-tour="timeline">
+      <ItineraryCheck segments={items} />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <div className={`${styles.segList} flex flex-col`}>
@@ -76,6 +89,41 @@ export default function Timeline({ tripId, segments, passengers, homeTimezone }:
         </SortableContext>
       </DndContext>
       {saving && <p className="text-label text-white/25 mt-2" style={{ fontSize: '0.6rem' }}>saving order…</p>}
+    </div>
+  )
+}
+
+/**
+ * Deterministic itinerary check (lib/itinerary/sanity.ts) — re-run on
+ * every render from the same segments the passes show, so it updates the
+ * moment a segment is saved, reordered, or rescheduled. Pure, with no
+ * time-zone-dependent formatting, so server and client render the same.
+ */
+function ItineraryCheck({ segments }: { segments: SegmentDTO[] }) {
+  const issues = useMemo(
+    () => checkItinerary(segments.map((s) => ({ ...s, label: displaySegmentLabel(s) }))),
+    [segments]
+  )
+  if (issues.length === 0) return null
+  const conflicts = issues.filter((i) => i.severity === 'conflict').length
+  return (
+    <div
+      role="status"
+      className="rounded-2xl px-5 py-4 mb-5"
+      style={{ background: conflicts ? 'rgba(229,72,77,0.08)' : 'rgba(212,168,83,0.08)', border: `1px solid ${conflicts ? 'rgba(229,72,77,0.3)' : 'rgba(212,168,83,0.3)'}` }}
+    >
+      <p className="text-editorial text-white" style={{ fontSize: '0.88rem' }}>
+        {issues.length === 1 ? 'One thing in this itinerary looks off' : `${issues.length} things in this itinerary look off`}
+      </p>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {issues.map((issue, i) => (
+          <li key={`${issue.code}-${issue.segmentId}-${i}`} className="text-editorial text-white/70" style={{ fontSize: '0.78rem' }}>
+            <span style={{ color: issue.severity === 'conflict' ? '#e5484d' : '#d4a853' }}>{issue.severity === 'conflict' ? 'Conflict' : 'Check'}:</span>{' '}
+            {issue.message}{' '}
+            <a href={`#seg-${issue.segmentId}`} className="underline text-white/50 hover:text-white/80">Show</a>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

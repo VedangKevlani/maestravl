@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyZoneLabel, formatFriendlyTime, formatDuration, resolveSegmentZones, classifyArrivalHour, zonedDateTimeToUtc } from './dateFormat'
+import { friendlyZoneLabel, formatFriendlyTime, formatDuration, resolveSegmentZones, classifyArrivalHour, zonedDateTimeToUtc, utcToZonedDateTimeParts, segmentEntryZones } from './dateFormat'
 
 describe('friendlyZoneLabel', () => {
   it('derives a plain-language label from the IANA zone name', () => {
@@ -98,5 +98,54 @@ describe('classifyArrivalHour', () => {
 
   it('classifies daytime hours as NORMAL', () => {
     expect(classifyArrivalHour(new Date('2026-08-13T18:00:00.000Z'), 'America/New_York')).toBe('NORMAL') // 2pm NY
+  })
+})
+
+describe('utcToZonedDateTimeParts', () => {
+  it('splits an instant into date/time input values in the given zone', () => {
+    // 09:55 UTC in mid-August is 05:55 EDT
+    expect(utcToZonedDateTimeParts('2026-08-14T09:55:00.000Z', 'America/New_York')).toEqual({ date: '2026-08-14', time: '05:55' })
+  })
+
+  it('crosses the calendar date when the zone does', () => {
+    expect(utcToZonedDateTimeParts('2026-08-14T02:30:00.000Z', 'America/Jamaica')).toEqual({ date: '2026-08-13', time: '21:30' })
+  })
+
+  it('renders midnight as 00, not 24', () => {
+    expect(utcToZonedDateTimeParts('2026-08-14T04:00:00.000Z', 'America/New_York')).toEqual({ date: '2026-08-14', time: '00:00' })
+  })
+
+  it('returns empty values for a missing or invalid instant', () => {
+    expect(utcToZonedDateTimeParts(null, 'America/New_York')).toEqual({ date: '', time: '' })
+    expect(utcToZonedDateTimeParts('not a date', 'America/New_York')).toEqual({ date: '', time: '' })
+  })
+
+  // The regression this exists for: an edit form that prefills in one zone
+  // and parses in another silently moves a segment every time it's saved.
+  it('round-trips exactly through zonedDateTimeToUtc in every zone, including across DST', () => {
+    const instants = ['2026-03-08T07:30:00.000Z', '2026-08-14T09:55:00.000Z', '2026-11-01T05:30:00.000Z', '2026-12-31T23:59:00.000Z']
+    for (const zone of ['America/New_York', 'America/Jamaica', 'Europe/London', 'Asia/Kolkata', null]) {
+      for (const iso of instants) {
+        const { date, time } = utcToZonedDateTimeParts(iso, zone)
+        expect(zonedDateTimeToUtc(date, time, zone).toISOString()).toBe(iso)
+      }
+    }
+  })
+})
+
+describe('segmentEntryZones', () => {
+  it('uses each endpoint\'s airport zone, matching how the boarding pass displays it', () => {
+    const zones = segmentEntryZones({ departureLocationCode: 'JFK', arrivalLocationCode: 'MBJ', timezone: 'America/Chicago' })
+    expect(zones).toEqual({ departure: 'America/New_York', arrival: 'America/Jamaica' })
+  })
+
+  it('falls back to the timezone field for both ends when there are no airport codes (hotel, train)', () => {
+    const zones = segmentEntryZones({ departureLocationCode: null, arrivalLocationCode: null, timezone: 'Europe/Paris' })
+    expect(zones).toEqual({ departure: 'Europe/Paris', arrival: 'Europe/Paris' })
+  })
+
+  it('uses the departure zone for an arrival with no resolvable airport', () => {
+    const zones = segmentEntryZones({ departureLocationCode: 'KIN', arrivalLocationCode: 'ZZZ', timezone: null })
+    expect(zones).toEqual({ departure: 'America/Jamaica', arrival: 'America/Jamaica' })
   })
 })

@@ -1,5 +1,5 @@
 // Pure — a defensive cleanup pass on the model's reply before it's spoken
-// (lib/voice/tts.ts) or shown in the transcript bubble (VoiceWidget.tsx).
+// (Kokoro in the browser, app/components/chat/useKokoro.ts) or shown in the transcript bubble (VoiceWidget.tsx).
 // The system prompt already instructs plain spoken sentences with no
 // markdown, but a model can still leak formatting habits from its training
 // (a stray "**bold**", a "- " bullet, a "#" header) that read as garbled

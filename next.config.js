@@ -21,6 +21,24 @@ const nextConfig = {
       './node_modules/tesseract.js/src/worker-script/**/*',
     ],
   },
+  // Cross-origin isolation lets the in-browser Kokoro voice
+  // (app/components/chat/kokoro.worker.ts) run on several CPU threads
+  // instead of one — WebAssembly threads need SharedArrayBuffer, which
+  // browsers only enable on isolated pages. `credentialless` (rather than
+  // `require-corp`) keeps cross-origin map tiles, fonts and Wikipedia
+  // working: they load without cookies, which none of them need. Browsers
+  // that don't support it simply aren't isolated and use one thread.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+        ],
+      },
+    ]
+  },
 };
 
 module.exports = nextConfig;

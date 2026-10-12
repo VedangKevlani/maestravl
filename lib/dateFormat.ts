@@ -109,8 +109,9 @@ function timezoneOffsetMinutes(instant: Date, timeZone: string): number {
  * time *in `timeZone`* (rather than the browser/server's own zone, which is
  * what plain `new Date(dateStr + 'T' + timeStr)` silently does) — the actual
  * UTC instant returned is correct regardless of what zone this code happens
- * to run in. Falls back to the runtime's own zone when `timeZone` is null
- * (e.g. neither manually entered nor auto-detected).
+ * to run in. Treats the input as UTC when `timeZone` is null (e.g. neither
+ * manually entered nor auto-detected) — utcToZonedDateTimeParts below does
+ * the same, so a value always round-trips unchanged.
  *
  * Two-pass DST correction: the zone's UTC offset can differ right around a
  * DST transition depending on which instant you ask it for, so the first
@@ -127,7 +128,47 @@ export function zonedDateTimeToUtc(dateStr: string, timeStr: string, timeZone: s
   return new Date(naiveUTC.getTime() - offset2 * 60_000)
 }
 
-export type ArrivalHourClass = 'LATE_NIGHT' | 'EARLY_MORNING' | 'NORMAL'
+/**
+ * Exact inverse of zonedDateTimeToUtc: splits an instant into the
+ * `<input type="date">` / `<input type="time">` values it reads as in
+ * `timeZone` (UTC when null). Any form that parses with zonedDateTimeToUtc
+ * must prefill with this using the same zone — prefilling in the browser's
+ * own zone instead meant that simply opening a segment's edit form and
+ * saving (even to change only a seat) silently shifted its times by the
+ * difference between the two zones.
+ */
+export function utcToZonedDateTimeParts(iso: string | Date | null, timeZone: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' }
+  const instant = typeof iso === 'string' ? new Date(iso) : iso
+  if (isNaN(instant.getTime())) return { date: '', time: '' }
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || 'UTC',
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(instant)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+}
+
+/**
+ * The zones a segment form's departure/arrival inputs are entered in —
+ * deliberately the same resolution the boarding pass *displays* with
+ * (resolveSegmentZones: an endpoint's airport zone first, then the
+ * segment's timezone field), so what a passenger types is exactly what
+ * they then see on the pass, and matches the local times printed on their
+ * ticket. Arrival falls back to the departure zone when it has no airport
+ * of its own (a hotel, a train), the same zone the form always used.
+ */
+export function segmentEntryZones(segment: LocatableSegment): { departure: string | null; arrival: string | null } {
+  const zones = resolveSegmentZones(segment)
+  return { departure: zones.departure, arrival: zones.arrival ?? zones.departure }
+}
+
+export type ArrivalHourClass ='LATE_NIGHT' | 'EARLY_MORNING' | 'NORMAL'
 
 /**
  * Buckets an arrival by how inconvenient its *local* hour is — a 2am

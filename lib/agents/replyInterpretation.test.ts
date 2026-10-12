@@ -41,3 +41,22 @@ describe('decideRunTransition', () => {
     expect(counter.summary.toLowerCase()).toContain('counter-offer')
   })
 })
+
+describe('decideRunTransition — counter-offers', () => {
+  const counter = interpretation({ intent: 'COUNTER_OFFER', confidence: 80 })
+
+  it('offers a one-click confirm when exactly one proposed time was read', () => {
+    const result = decideRunTransition(counter, true, 'Flight AA123', 'Aug 14, 5:30 PM, New York time')
+    expect(result.status).toBe('RESCHEDULING')
+    expect(result.summary).toContain('5:30 PM')
+    expect(result.summary.toLowerCase()).toContain('confirm')
+  })
+
+  it('falls back to "take a look" when no time could be read', () => {
+    expect(decideRunTransition(counter, true, 'Flight AA123', null).status).toBe('ACTION_REQUIRED')
+  })
+
+  it('needs an actual reschedule request to apply the time to', () => {
+    expect(decideRunTransition(counter, false, 'Hotel', 'Aug 14, 5:30 PM, New York time').status).toBe('ACTION_REQUIRED')
+  })
+})

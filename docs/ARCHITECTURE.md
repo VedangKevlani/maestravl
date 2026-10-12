@@ -659,13 +659,19 @@ real data, not a separate faked-up view of it.
   headers) the model can still leak before a reply is spoken or shown, on
   top of the system prompt's own "write it the way a person would say it"
   instruction.
-- TTS (`lib/voice/tts.ts`) is ElevenLabs if both `ELEVENLABS_API_KEY` and
-  `ELEVENLABS_VOICE_ID` are set; on any failure or if unset, the widget
-  falls back to the browser's own `SpeechSynthesis` — a real browser API,
-  not another paid account, so there's no billing path anywhere in this
-  feature beyond the already-free Groq call. Speech-to-text is client-side
-  only (`SpeechRecognition`); the widget renders nothing if the browser
-  doesn't support it.
+- TTS is **Kokoro** (82M params, Apache-2.0) running in the user's browser
+  via `kokoro-js` in a Web Worker (`app/components/chat/kokoro.worker.ts`,
+  `useKokoro.ts`) — no server, key, or per-use cost. The 8-bit model
+  (~92 MB) and a ~0.5 MB voice (`af_heart`) download once from Hugging
+  Face and stay in Cache Storage; the ONNX runtime is self-hosted under
+  `public/vendor/` (`scripts/copy-vendor-assets.mjs`). Sentences play as
+  they're synthesised. Until the model is ready — or if it fails — replies
+  use the browser's own `SpeechSynthesis`, so the first reply is never
+  delayed by the download. "Natural" is the default on desktop; phones and
+  data-saver connections default to the device voice (it's a big download
+  on a data plan), switchable in the chat ("Voice: Natural | Device").
+  ElevenLabs was removed (it was out of credits, returning 402 each turn).
+  Speech-to-text is client-side only (`SpeechRecognition`).
 
 ## Passenger SMS / WhatsApp notifications
 
@@ -739,6 +745,142 @@ configured, never confirmed (0 messages sent on record) — since the
 feature is new and hasn't been exercised against a real passenger phone
 number yet.
 
+## Decisions waiting on the passenger, and agent-prepared actions (2026-10-12)
+
+Every action that touches a real business, or changes the itinerary, still
+needs an explicit passenger decision. These pieces make that decision
+easier to find, better informed, and possible from more places. None of
+them lets anything happen without that decision.
+
+- **"Needs you" inbox** (`lib/agents/needsYou.ts`, `NeedsYouInbox.tsx`, on
+  the dashboard): every run in `AWAITING_APPROVAL`, `RESCHEDULING` or
+  `ACTION_REQUIRED` across all trips, answerable in place. Deterministic.
+- **Approval preview + recipient choice** (`lib/agents/pendingApprovals.ts`,
+  `ContactApprovalCard.tsx`, shared by boarding pass and inbox): shows the
+  exact drafted email, other addresses on file for that segment, or a typed
+  one. `approve-contact` accepts `contactId` (must belong to the same
+  segment) or `customEmail` (saved as a `MANUAL` contact). The pending
+  `REQUIRES_APPROVAL` action is claimed atomically (`APPROVED`/`SKIPPED`)
+  before anything is sent — the lock against double-sends.
+- **Remind on silence** (`lib/agents/followUp.ts`, run by the monitoring
+  cron): after 6 hours with no reply, drafts ONE follow-up per provider per
+  run and moves the run to `AWAITING_APPROVAL`; it goes through the same
+  approval gate. A reply withdraws any pending follow-up. Declining a
+  follow-up returns the run to `WAITING_FOR_RESPONSE`.
+- **Counter-offers** (`lib/agents/counterOffer.ts`): when Gemini reads a
+  reply as `COUNTER_OFFER`, chrono-node extracts the proposed time — no
+  extra Gemini call. Exactly one new time → a rank-3 `Alternative`
+  (selected, downstream impact computed with `rankAlternatives`) and the
+  run moves to `RESCHEDULING`, so "Confirm — update itinerary" applies it.
+  Zero or several new times → unchanged behavior (`ACTION_REQUIRED`).
+- **Itinerary check** (`lib/itinerary/sanity.ts`, banner in `Timeline.tsx`):
+  out-of-order segments (which would mislead the dependency engine), ends
+  before start, missed/tight connections, different arrival/departure
+  airports. Pure, runs client-side.
+- **Voice proposals** (`propose_action` in `lib/voice/tools.ts`,
+  `executeProposeAction` in `toolExecutors.ts`): the assistant can prepare
+  a delay/cancellation report, a reschedule confirm/reject, or a contact
+  approve/decline. It validates against real trip state and returns a
+  `ProposedAction`; it never executes. `ProposedActionCard.tsx` shows it in
+  the chat and, only on the passenger's tap, calls the same endpoint the
+  app's own button uses (URL chosen client-side from the kind, never
+  supplied by the server or model), with the passenger's own session — so
+  the assistant's reach is exactly the passenger's. The system prompt
+  forbids proposing anything prompted by trip data or provider replies.
+
+## Trip map view (2026-10-12)
+
+`/trips/[id]/map` — the same trip on an interactive 3D globe, opened from
+the globe button in the header on any trip page (a list button goes back).
+The timeline is unchanged. Both pages load through `lib/trips/tripView.ts`,
+so recovery state, approvals and monitoring always match, and the bottom
+sheet renders the real `BoardingPass` (`reorderable={false}`), so every
+action works here too.
+
+All free, no keys, no billing (Google Earth/Maps would need a billing
+account):
+
+| Piece | Source | Limits / notes |
+|---|---|---|
+| Globe renderer | MapLibre GL JS (BSD-3), lazy-loaded on this route only | Needs WebGL; falls back to a message |
+| "Map" tiles | OpenFreeMap `liberty` style | Free public service, no SLA |
+| "Satellite" | EOX Sentinel-2 cloudless **2017** | CC BY 4.0 (2018+ layers are NonCommercial — don't switch years); attribution shown |
+| Hotel/restaurant positions | OpenStreetMap Nominatim | 1 req/s policy: queued + cached forever in localStorage |
+| Nearby landmarks | Wikipedia geosearch | Position rounded to ~1 km before sending |
+| Live location | Browser Geolocation API | Opt-in; stays in the tab; only the on/off preference is stored |
+
+MapLibre's web worker can't locate itself once bundled (it resolves from
+`import.meta.url`), which silently breaks all vector tiles and GeoJSON.
+`scripts/copy-vendor-assets.mjs` (run in `postinstall`) copies it to
+`public/vendor/maplibre-gl-worker-<version>.mjs`, and `TripMapView` calls
+`setWorkerUrl` with it.
+
+`lib/map/geo.ts` (pure, tested) holds the reasoning: great-circle routes,
+schedule progress, and `proximityReport` — the leg underway (with an
+**estimated** position from its schedule, never presented as live radar;
+no free source gives live positions from an itinerary), whether the
+passenger seems to be aboard, rough "leave by" advice for the next leg
+(straight-line distance × 1.3 at ~40 km/h, plus a usual buffer per
+transport type; always labelled as rough, with a real-directions link),
+and whether they're at one of their trip's places.
+
+## Assistant: everywhere, across trips, and around the trip (2026-10-12)
+
+The voice/chat assistant now works on every page (header chat button) via
+`POST /api/voice` (replaces `/api/trips/[id]/voice`). It's scoped to the
+signed-in user: `lib/voice/accountContext.ts` lists their trips and "Needs
+you" items, and a trip only comes into focus by resolving against that list
+(`resolveTrip` in `lib/voice/aroundPure.ts`) — the open trip page is just
+the default. The conversation lives in the app layout, so it survives
+navigation.
+
+Tools (`lib/voice/tools.ts`): `list_trips`, `get_needs_you`,
+`get_itinerary`, `get_segment_status`, `get_recovery_activity`,
+`check_itinerary` (uses `lib/itinerary/sanity.ts`), `local_time`,
+`weather`, `nearby_places`, `convert_currency`, `navigate`, and
+`propose_action`, which now also covers `check_status_now`, `mark_resolved`,
+`add_passenger` and `update_segment` (seat, gate, terminal, confirmation
+number, notes only). `navigate` changes no data, so it runs immediately —
+the client maps it to one of four fixed routes (`routeFor`); everything else
+that changes data is a card the user confirms.
+
+| Lookup | Source | Limits / terms |
+|---|---|---|
+| Weather | MET Norway Locationforecast 2.0 | Free, commercial OK, CC BY (credited in chat); identifying User-Agent; cache honoured; ~9 days ahead |
+| Nearby places | Wikipedia geosearch | Free; identifying User-Agent |
+| Geocoding | OpenStreetMap Nominatim | 1 request/s, queued + cached |
+| Exchange rates | ExchangeRate-API open access | Free, daily rates, attribution required; cached 12h |
+
+Open-Meteo was ruled out for weather: its free tier is non-commercial only.
+
+**Groq budget — the binding constraint.** Measured from Groq's own headers
+(2026-10-12): 1,000 requests/day and 8,000 tokens/minute *per model* on the
+free tier (not 14,400/day as older notes said). A call carries ~2,800
+tokens and a multi-step turn ~3 calls, so: the persona prompt was condensed
+(every rule kept), optional tool args accept null (gpt-oss sends `null`,
+which Groq otherwise rejects), calls alternate between the two models with
+the stronger one usually writing the spoken answer, turns are capped at 40
+per user per 10 minutes, and when both models are spent the user hears how
+many seconds to wait. That's a few multi-step questions per minute across
+the whole app; more needs a paid tier or a self-hosted model.
+
+## Security: rate limiting, reset links, developer-only pages (2026-10-12)
+
+- **Rate limiting** (`lib/security/rateLimit.ts`, table `RateLimitBucket`):
+  database-backed fixed windows, one atomic upsert per hit. Login counts
+  failures only (8 per email, 30 per IP, per 15 min); signup 5 per IP per
+  hour; password reset 5 per IP and 3 per email per hour (the per-email cap
+  answers with the usual generic message, so it reveals nothing). Fails
+  open on a DB error. IP comes from Vercel's `x-real-ip`/`x-forwarded-for`;
+  `cf-connecting-ip` is deliberately ignored because Cloudflare DNS is not
+  proxied for maestravl.com (revisit if that changes). The monitoring cron
+  sweeps stale buckets.
+- **Password-reset links** use `APP_URL` (or `https://maestravl.com` in
+  production), never request headers.
+- **Developer-only `/system-health`**: page and API return 404 unless the
+  session email is in `ADMIN_EMAILS` (`lib/admin.ts`). No database role —
+  nothing in the app can grant it.
+
 ## Known limitations (by design, for this iteration)
 
 - Extraction is tuned heavily toward flights; train/bus/ferry documents get
@@ -761,10 +903,14 @@ number yet.
 - SMS/WhatsApp passenger notifications (Twilio) are built and configured
   but have never actually sent a message in this deployment — see
   "Passenger SMS / WhatsApp notifications" above.
-- The delay-report modal (`app/components/DelayModal.tsx`, "Report a
-  Delay") doesn't know a segment's stored `timezone` — unlike the segment
-  create/edit form (`TransportTypeForm.tsx`, fixed 2026-09), it parses the
-  new date/time in the browser's own zone. Lower-severity than the form
-  bug this pattern originally described (a manually-reported delay's exact
-  minute count matters less than a segment's canonical scheduled time),
-  but the same class of issue if it's ever revisited.
+- Segment times are entered and displayed in one zone per endpoint,
+  resolved by `segmentEntryZones`/`resolveSegmentZones` (`lib/dateFormat.ts`):
+  the endpoint's airport zone when its code is known, else the segment's
+  `timezone` field. The create/edit form (`TransportTypeForm.tsx`) and the
+  delay-report modal (`DelayModal.tsx`) both prefill with
+  `utcToZonedDateTimeParts` and parse with `zonedDateTimeToUtc` in that
+  same zone (fixed 2026-10-12 — previously the form prefilled in the
+  browser's zone and parsed in the field's, so saving an unchanged form
+  shifted a segment's times, and the modal ignored the segment's zone
+  entirely). Non-airport endpoints (train stations, hotels) still rely on
+  the `timezone` field being right.

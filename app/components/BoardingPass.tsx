@@ -17,6 +17,7 @@ import { isUberConfigured, locationText, buildUberDeepLink, isPlausibleUberTrip 
 import { getFieldProfile } from './segmentFieldProfiles'
 import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
 import ConfirmDialog from './ConfirmDialog'
+import ContactApprovalCard from './ContactApprovalCard'
 import { STATUS_COPY, toneOf } from '@/lib/agents/statusCopy'
 import { isTerminalRunStatus } from '@/lib/constants'
 import styles from '../styles/trip.module.css'
@@ -207,7 +208,22 @@ function MessagesPanel({ runId }: { runId: string }) {
   )
 }
 
-export default function BoardingPass({ tripId, segment, passengers, nextSegment, homeTimezone }: { tripId: string; segment: SegmentDTO; passengers: PassengerDTO[]; nextSegment: SegmentDTO | null; homeTimezone: string | null }) {
+export default function BoardingPass({
+  tripId,
+  segment,
+  passengers,
+  nextSegment,
+  homeTimezone,
+  reorderable = true,
+}: {
+  tripId: string
+  segment: SegmentDTO
+  passengers: PassengerDTO[]
+  nextSegment: SegmentDTO | null
+  homeTimezone: string | null
+  /** False where one pass is shown on its own (the map view) — hides the drag-to-reorder handle. Still needs a dnd-kit SortableContext above it. */
+  reorderable?: boolean
+}) {
   const router = useRouter()
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -231,19 +247,37 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
   }, [segment.departureTime])
   const [reporting, setReporting] = useState(false)
   const [reportResult, setReportResult] = useState<ReportResult | null>(null)
-  const { hasUnseen: hasUnseenUpdates, markSeen: markUpdatesSeen } = useSegmentUnreadUpdates(tripId, segment.id)
+  // Re-checks for unseen updates whenever this segment's visible state
+  // moves (the page polls every few seconds), not just once on mount.
+  const { hasUnseen: hasUnseenUpdates, markSeen: markUpdatesSeen } = useSegmentUnreadUpdates(
+    tripId,
+    segment.id,
+    `${segment.status}|${segment.activeRun?.id ?? ''}|${segment.activeRun?.status ?? ''}|${segment.activeRun?.summary ?? ''}`
+  )
   const [messagesOpen, setMessagesOpen] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [approving, setApproving] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [delayModalOpen, setDelayModalOpen] = useState(false)
   const [updatesModalOpen, setUpdatesModalOpen] = useState(false)
   const [extraOpen, setExtraOpen] = useState(false)
 
   const lastCheckedRelative = useRelativeTime(segment.monitoring?.lastCheckedAt)
+  const monitoringState: 'paused' | 'untracked' | 'pending' | 'checked' | 'error' =
+    segment.monitoring?.status === 'PAUSED'
+      ? 'paused'
+      : segment.monitoring?.status === 'ERROR'
+        ? 'error'
+        : segment.monitoring?.status !== 'ACTIVE'
+          ? 'untracked'
+          : segment.monitoring.lastCheckedAt
+            ? 'checked'
+            : 'pending'
+  // Only a configured live adapter has anything to re-check.
+  const canCheckNow = monitoringState === 'checked' || monitoringState === 'pending' || monitoringState === 'error'
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: segment.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -286,18 +320,43 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
     setDeleteConfirmOpen(true)
   }
 
+  /**
+   * POSTs one of this card's actions and surfaces a failure instead of
+   * swallowing it — these used to ignore the response entirely, so a send
+   * that failed (the route returns 502 with an explanation) just refreshed
+   * as if it worked, and a dropped connection left the button stuck on
+   * "Sending…" for good. Refreshes either way: a failed send still changes
+   * the run's state server-side.
+   */
+  async function runAction(url: string, init: RequestInit, setBusy: (v: boolean) => void, fallbackError: string): Promise<boolean> {
+    setBusy(true)
+    setActionError(null)
+    try {
+      const res = await fetch(url, init)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setActionError(data.error || fallbackError)
+        return false
+      }
+      return true
+    } catch {
+      setActionError("Couldn't reach Maestravl — check your connection and try again.")
+      return false
+    } finally {
+      setBusy(false)
+      router.refresh()
+    }
+  }
+
   async function handleDeleteConfirmed() {
-    setDeleting(true)
-    await fetch(`/api/segments/${segment.id}`, { method: 'DELETE' })
+    const ok = await runAction(`/api/segments/${segment.id}`, { method: 'DELETE' }, setDeleting, "Couldn't remove this segment — try again.")
     setDeleteConfirmOpen(false)
-    router.refresh()
+    if (!ok) setEditModalOpen(false)
   }
 
   async function handleCheckNow() {
-    setChecking(true)
-    await fetch(`/api/segments/${segment.id}/monitor`, { method: 'POST' })
-    setChecking(false)
-    router.refresh()
+    if (checking) return
+    await runAction(`/api/segments/${segment.id}/monitor`, { method: 'POST' }, setChecking, "Couldn't check this segment's status right now — try again in a moment.")
   }
 
   async function handleReport(status: 'DELAYED' | 'CANCELLED') {
@@ -328,72 +387,77 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
     router.refresh()
   }
 
+  const jsonPost = (body: unknown): RequestInit => ({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
   async function handleConfirmReschedule(accept: boolean) {
     if (!activeRun) return
-    setConfirming(true)
-    await fetch(`/api/agent-runs/${activeRun.id}/confirm-reschedule`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accept }),
-    })
-    setConfirming(false)
-    router.refresh()
-  }
-
-  async function handleApproveContact(approve: boolean) {
-    if (!activeRun || !pendingContactApproval) return
-    setApproving(true)
-    await fetch(`/api/agent-runs/${activeRun.id}/approve-contact`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ communicationId: pendingContactApproval.communicationId, approve }),
-    })
-    setApproving(false)
-    router.refresh()
+    await runAction(`/api/agent-runs/${activeRun.id}/confirm-reschedule`, jsonPost({ accept }), setConfirming, "Couldn't save your answer — try again.")
   }
 
   async function handleResolve() {
     if (!activeRun) return
-    setResolving(true)
-    await fetch(`/api/agent-runs/${activeRun.id}/resolve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note: resolveNote.trim() || undefined }),
-    })
-    setResolving(false)
-    setResolveOpen(false)
-    setResolveNote('')
-    router.refresh()
+    const ok = await runAction(
+      `/api/agent-runs/${activeRun.id}/resolve`,
+      jsonPost({ note: resolveNote.trim() || undefined }),
+      setResolving,
+      "Couldn't save that — your note is still here, try again."
+    )
+    // Keep the note on screen if it didn't save, so nothing typed is lost.
+    if (ok) {
+      setResolveOpen(false)
+      setResolveNote('')
+    }
   }
 
   return (
     <div ref={setNodeRef} style={style} data-tour="segment-card" id={`seg-${segment.id}`} className={styles.segBlock}>
       <div className={styles.segMetaRow}>
-        {segment.monitoring?.status !== 'PAUSED' ? (
-          <span data-tip="Maestro is actively watching this segment">
-            <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
-            LAST CHECKED: {segment.monitoring?.lastCheckedAt ? (lastCheckedRelative || '…') : 'just now'}
+        {/* Previously "LAST CHECKED: just now" whenever there was no check
+            on record — including segments never checked at all and types
+            with no live tracking (hotels, restaurants), under a tooltip
+            claiming they were being actively watched. */}
+        {monitoringState === 'paused' ? (
+          <span data-tip="Maestravl is not monitoring this segment">
+            <EyeOff size={12} style={{ display: 'inline', verticalAlign: 'middle', opacity: 0.8 }} />
+            <span className="sr-only">Monitoring paused</span>
           </span>
         ) : (
-          <span data-tip="Maestro is not monitoring this segment">
-            <EyeOff size={12} style={{ display: 'inline', verticalAlign: 'middle', opacity: 0.8 }} />
+          <span data-tip={monitoringLabel(segment.monitoring)}>
+            <Eye size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', opacity: 0.8 }} />
+            {monitoringState === 'checked'
+              ? <>LAST CHECKED: {lastCheckedRelative || '…'}</>
+              : monitoringState === 'pending'
+                ? 'NOT CHECKED YET'
+                : monitoringState === 'error'
+                  ? 'MONITORING ERROR'
+                  : 'NO LIVE TRACKING'}
           </span>
         )}
-        {segment.monitoring?.status !== 'PAUSED' ? (
-          <span
+        {canCheckNow ? (
+          <button
+            type="button"
             className={styles.checkStatusBtn}
-            data-tip="Ask Maestro to re-check this segment's status right now"
+            data-tip="Ask Maestravl to re-check this segment's status right now"
             onClick={handleCheckNow}
+            disabled={checking}
             style={{ cursor: checking ? 'wait' : 'pointer' }}
           >
             {checking ? 'Checking…' : 'Check Status Now'}
-          </span>
+          </button>
         ) : null}
         <div className={styles.metaSpacer} />
         <div
           className={styles.bellDot}
+          role="button"
+          tabIndex={0}
+          aria-label={hasUnseenUpdates ? 'View updates for this segment (new)' : 'View updates for this segment'}
           onClick={() => { setUpdatesModalOpen(true); markUpdatesSeen() }}
-          data-tip="View all Maestro updates and alerts for this segment"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setUpdatesModalOpen(true); markUpdatesSeen() } }}
+          data-tip="View all Maestravl updates and alerts for this segment"
         >
           <Bell size={13} />
           {hasUnseenUpdates && <span className={styles.segUnreadDot} aria-hidden="true" />}
@@ -409,13 +473,15 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
       </div>
 
       <div className={styles.segRow}>
-        <button
-          {...attributes} {...listeners}
-          aria-label="Drag to reorder"
-          className={styles.segDrag}
-        >
-          <GripVertical size={16} />
-        </button>
+        {reorderable && (
+          <button
+            {...attributes} {...listeners}
+            aria-label="Drag to reorder"
+            className={styles.segDrag}
+          >
+            <GripVertical size={16} />
+          </button>
+        )}
 
         <div className={styles.ticketCard}>
           <div className={styles.ticketSide}>
@@ -522,14 +588,13 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                 </p>
                 {isReschedulingPrompt && (
                   <p className={styles.runRibbonNote}>
-                    Maestravl thinks this reply means yes, but only you can confirm it — check the messages below before deciding.
+                    Nothing changes until you confirm — read the provider&rsquo;s actual reply under &ldquo;View messages&rdquo; before deciding.
                   </p>
                 )}
                 {pendingContactApproval && (
-                  <p className={styles.runRibbonNote}>
-                    Found via {pendingContactApproval.source.toLowerCase().replace('_', ' ')} (confidence {pendingContactApproval.confidence}):{' '}
-                    <strong>{pendingContactApproval.contactValue}</strong>. Reach out on your behalf?
-                  </p>
+                  <div className="mt-2">
+                    <ContactApprovalCard runId={activeRun.id} approval={pendingContactApproval} />
+                  </div>
                 )}
                 <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                   {isReschedulingPrompt && (
@@ -547,24 +612,6 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                         className={styles.manageBtnSecondary}
                       >
                         Not quite
-                      </button>
-                    </>
-                  )}
-                  {pendingContactApproval && (
-                    <>
-                      <button
-                        onClick={() => handleApproveContact(true)}
-                        disabled={approving}
-                        className={styles.manageBtn}
-                      >
-                        {approving ? 'Sending…' : 'Yes, reach out'}
-                      </button>
-                      <button
-                        onClick={() => handleApproveContact(false)}
-                        disabled={approving}
-                        className={styles.manageBtnSecondary}
-                      >
-                        No, I'll handle it
                       </button>
                     </>
                   )}
@@ -593,7 +640,8 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
                 {resolveOpen && canResolve && (
                   <div className="flex flex-col gap-2 mt-2.5 pt-2.5 border-t border-white/10">
                     <p className={styles.notifiesNote}>
-                      Maestravl can't yet tell automatically when a provider replies — if you heard back yourself, let it know here.
+                      Maestravl reads email replies to its own requests automatically — if the provider answered another way
+                      (a call, a text, a different email), let it know here.
                     </p>
                     <textarea
                       value={resolveNote}
@@ -614,6 +662,12 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
 
                 {messagesOpen && <MessagesPanel runId={activeRun.id} />}
               </div>
+            )}
+
+            {actionError && (
+              <p role="alert" style={{ fontSize: '11px', color: '#e5484d', marginTop: '10px' }}>
+                {actionError}
+              </p>
             )}
 
             {reportOpen && (
@@ -732,6 +786,9 @@ export default function BoardingPass({ tripId, segment, passengers, nextSegment,
         tripId={tripId}
         isOpen={delayModalOpen}
         onClose={() => setDelayModalOpen(false)}
+        currentDepartureTime={segment.departureTime}
+        timezone={segmentZones.departure}
+        timeLabel={reportTimeLabel}
       />
 
       <SegmentUpdatesModal

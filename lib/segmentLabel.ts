@@ -16,3 +16,17 @@ export function segmentLabel(segment: {
       : ''
   return `${name}${route}`
 }
+
+/** segmentLabel, but still readable for segments with no flight number or provider (a hotel, a dinner) — "Hotel · Montego Bay". Pure; safe in client components. */
+export function displaySegmentLabel(s: {
+  identifier: string | null
+  provider: string | null
+  departureLocationCode: string | null
+  arrivalLocationCode: string | null
+  transportType: string
+  departureLocation: string | null
+}): string {
+  if (s.identifier || s.provider) return segmentLabel(s)
+  const type = s.transportType.charAt(0) + s.transportType.slice(1).toLowerCase().replace(/_/g, ' ')
+  return s.departureLocation ? `${type} · ${s.departureLocation}` : type
+}

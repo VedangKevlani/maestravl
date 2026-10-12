@@ -2,32 +2,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Timeline from './Timeline'
-import { formatMonitoringStatus } from '@/lib/monitoring/format'
 import { getLastSeen, setLastSeen } from './useUnreadNotifications'
 import styles from '../styles/trip.module.css'
 import type { PassengerDTO, SegmentDTO } from './types'
 
+// One entry from lib/trips/activityFeed.ts — the same feed the per-segment
+// updates modal shows, each filed under the segment it concerns.
 export type ActivityItemDTO = {
   id: string
   segmentId: string
   segmentLabel: string
   detectedAt: string // ISO
-  kind: 'status_change' | 'agent_update'
-  // status_change fields
-  previousStatus?: string | null
-  newStatus?: string
-  // agent_update fields
-  agentStatus?: string
-  summary?: string | null
+  type: 'DISRUPTION' | 'AGENT_UPDATE' | 'NOTIFICATION'
+  message: string
+}
+
+const TYPE_LABEL: Record<ActivityItemDTO['type'], string> = {
+  DISRUPTION: 'Disruption',
+  AGENT_UPDATE: 'Maestravl',
+  NOTIFICATION: 'Notification',
 }
 
 function exportActivityLog(activity: ActivityItemDTO[], tripTitle: string) {
   const lines = activity.map((a) => {
     const when = new Date(a.detectedAt).toLocaleString('en-US')
-    if (a.kind === 'status_change') {
-      return `${when} — ${a.segmentLabel}: ${a.previousStatus ?? 'unknown'} \u2192 ${a.newStatus}`
-    }
-    return `${when} — ${a.segmentLabel}: ${a.summary ?? a.agentStatus}`
+    return `${when} — ${a.segmentLabel} — ${TYPE_LABEL[a.type]}: ${a.message}`
   })
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
   const url = URL.createObjectURL(blob)
@@ -72,19 +71,6 @@ function formatDateTime(iso: string, zone: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone }).format(new Date(iso))
 }
 
-const AGENT_STATUS_LABELS: Record<string, string> = {
-  DETECTED: 'Detected the disruption',
-  ANALYZING: 'Analyzing impact',
-  CONTACTING: 'Contacting the provider',
-  WAITING_FOR_RESPONSE: 'Waiting on a response',
-  RESCHEDULING: 'Rescheduling',
-  CONFIRMED: 'Confirmed a new plan',
-  FAILED: "Couldn't resolve automatically",
-  ALTERNATIVE_FOUND: 'Found an alternative',
-  ACTION_REQUIRED: 'Needs your input',
-  COMPLETED: 'Resolved',
-  SUPERSEDED: 'Superseded by a newer update',
-}
 
 function ActivityFeed({ activity, segmentLabel, onClearFilter, homeTimezone }: { activity: ActivityItemDTO[]; segmentLabel?: string; onClearFilter?: () => void; homeTimezone: string | null }) {
   return (
@@ -122,16 +108,15 @@ function ActivityFeed({ activity, segmentLabel, onClearFilter, homeTimezone }: {
                   {formatDateTime(item.detectedAt, homeTimezone ?? 'UTC')}
                 </span>
               </div>
-              {item.kind === 'status_change' ? (
-                <p className="text-editorial text-white/60" style={{ fontSize: '0.8rem' }}>
-                  {item.previousStatus ? `${formatMonitoringStatus(item.previousStatus)} → ` : ''}
-                  {formatMonitoringStatus(item.newStatus ?? '')}
-                </p>
-              ) : (
-                <p className="text-editorial text-white/60" style={{ fontSize: '0.8rem' }}>
-                  {item.summary || AGENT_STATUS_LABELS[item.agentStatus ?? ''] || item.agentStatus}
-                </p>
-              )}
+              <p className="text-editorial text-white/60" style={{ fontSize: '0.8rem' }}>
+                <span
+                  className="text-label mr-2"
+                  style={{ fontSize: '0.6rem', color: item.type === 'DISRUPTION' ? '#d4a853' : item.type === 'NOTIFICATION' ? '#52b788' : '#4aa0d8' }}
+                >
+                  {TYPE_LABEL[item.type].toUpperCase()}
+                </span>
+                {item.message}
+              </p>
             </div>
           ))}
         </div>

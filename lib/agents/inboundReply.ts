@@ -7,6 +7,11 @@
 
 import { prisma } from '@/lib/db'
 import { segmentLabel } from '@/lib/segmentLabel'
+import { isTerminalRunStatus } from '@/lib/constants'
+import { withdrawPendingFollowUps } from './followUp'
+import { extractCounterOfferTime } from './counterOffer'
+import { rankAlternatives, type DependencySegment } from '@/lib/dependency/graph'
+import { formatFriendlyTime, resolveSegmentZones } from '@/lib/dateFormat'
 import { extractReplyContent, snippetOf } from './replyText'
 import { classifyReply, decideRunTransition } from './replyInterpretation'
 import type { ReceivedEmail } from '@/lib/email'
@@ -63,6 +68,9 @@ export async function processInboundReply(communicationId: string, email: Receiv
     where: { id: outbound.id },
     data: { status: 'RESPONDED', respondedAt: new Date() },
   })
+  // They answered, so a follow-up still waiting on the passenger's OK for
+  // this provider is moot (lib/agents/followUp.ts).
+  await withdrawPendingFollowUps(outbound.agentRunId, outbound.segmentId)
 
   const [rescheduleRequest, primaryAlternative, backupAlternative] = await Promise.all([
     prisma.rescheduleRequest.findFirst({
@@ -105,6 +113,40 @@ export async function processInboundReply(communicationId: string, email: Receiv
     }
   }
 
+  // A counter-offer naming exactly one new time becomes a selectable
+  // Alternative, so the passenger can accept it with the same "Confirm —
+  // update itinerary" step as any reschedule (confirmReschedule.ts applies
+  // the selected Alternative). Read deterministically — no extra Gemini
+  // call — and only ever proposed, never applied, here.
+  let counterOfferText: string | null = null
+  if (interpretation.intent === 'COUNTER_OFFER' && rescheduleRequest) {
+    const zone = resolveSegmentZones(outbound.segment).departure
+    const offeredTimes = [rescheduleRequest.requestedTime, primaryAlternative?.proposedTime, backupAlternative?.proposedTime].filter((t): t is Date => Boolean(t))
+    const counterTime = extractCounterOfferTime(content, { referenceTime: rescheduleRequest.requestedTime, timezone: zone, offeredTimes })
+    if (counterTime) {
+      const tripSegments = await prisma.segment.findMany({
+        where: { tripId: outbound.segment.tripId },
+        select: { id: true, order: true, transportType: true, departureTime: true, arrivalTime: true },
+      })
+      const impact = rankAlternatives(tripSegments as DependencySegment[], outbound.segmentId, counterTime)[0]?.downstreamImpact ?? 'NONE'
+      await prisma.alternative.updateMany({ where: { agentRunId: outbound.agentRunId, segmentId: outbound.segmentId }, data: { selected: false } })
+      await prisma.alternative.create({
+        data: {
+          agentRunId: outbound.agentRunId,
+          segmentId: outbound.segmentId,
+          label: "Provider's counter-offer",
+          proposedTime: counterTime,
+          downstreamImpact: impact,
+          rank: 3,
+          selected: true,
+        },
+      })
+      counterOfferText =
+        formatFriendlyTime(counterTime, zone) +
+        (impact === 'MAJOR' ? ' (heads up: that would clash with what comes next on your trip)' : impact === 'MINOR' ? ' (that leaves a tight gap before what comes next)' : '')
+    }
+  }
+
   await prisma.agentAction.create({
     data: {
       agentRunId: outbound.agentRunId,
@@ -117,10 +159,15 @@ export async function processInboundReply(communicationId: string, email: Receiv
     },
   })
 
+  // Shared terminal definition (lib/constants.ts) rather than a local list —
+  // the local one predated SUPERSEDED, so a provider replying late to a
+  // run a newer delay report had already replaced would reopen that stale
+  // run alongside the new one: two "open" runs for one segment, the exact
+  // state lib/agents/detect.ts supersedes runs to prevent. The reply itself
+  // is still recorded above either way.
   const run = await prisma.agentRun.findUnique({ where: { id: outbound.agentRunId } })
-  const terminal = run?.status === 'COMPLETED' || run?.status === 'FAILED' || run?.status === 'CONFIRMED'
-  if (run && !terminal) {
-    const transition = decideRunTransition(interpretation, Boolean(rescheduleRequest), label)
+  if (run && !isTerminalRunStatus(run.status)) {
+    const transition = decideRunTransition(interpretation, Boolean(rescheduleRequest), label, counterOfferText)
     await prisma.agentRun.update({
       where: { id: run.id },
       data: { status: transition.status, summary: transition.summary },

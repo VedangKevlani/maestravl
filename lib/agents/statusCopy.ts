@@ -14,7 +14,10 @@ export const STATUS_COPY: Record<string, { headline: string; tone: 'progress' | 
   CONTACTING: { headline: 'Maestravl is reaching out on your behalf', tone: 'progress' },
   AWAITING_APPROVAL: { headline: 'Maestravl found a contact — waiting for your OK', tone: 'attention' },
   WAITING_FOR_RESPONSE: { headline: "Maestravl is waiting to hear back", tone: 'progress' },
-  RESCHEDULING: { headline: 'Maestravl is updating your itinerary', tone: 'progress' },
+  // Not "updating your itinerary" — nothing changes until the passenger
+  // confirms (app/api/agent-runs/[id]/confirm-reschedule), and the voice
+  // assistant reads this headline aloud as the run's current state.
+  RESCHEDULING: { headline: 'The provider replied — confirm the new time to update your itinerary', tone: 'attention' },
   CONFIRMED: { headline: "Confirmed — you're all set", tone: 'resolved' },
   ALTERNATIVE_FOUND: { headline: 'Maestravl found some options for you', tone: 'attention' },
   ACTION_REQUIRED: { headline: 'A couple of things need your attention', tone: 'attention' },

@@ -1,9 +1,11 @@
 import Link from 'next/link'
-import { Plus, Calendar, User, Route, Eye, Compass, Clock, ArrowRight } from 'lucide-react'
-import { auth } from '@/lib/auth'
+import { Plus, Calendar, User, Route, Eye, Compass, Clock } from 'lucide-react'
+import { requirePageUserId } from '@/lib/pageAuth'
 import { prisma } from '@/lib/db'
 import DashTripCardMenu from '../../components/DashTripCardMenu'
 import DashboardTabs from '../../components/DashboardTabs'
+import NeedsYouInbox from '../../components/NeedsYouInbox'
+import { loadNeedsYou } from '@/lib/agents/needsYou'
 import styles from '../../styles/dashboard.module.css'
 
 function formatDayMonth(d: Date) {
@@ -31,9 +33,6 @@ async function getTrips(userId: string) {
     include: {
       passengers: true,
       segments: { orderBy: { order: 'asc' }, include: { monitoring: true } },
-      // Only pull the flag we need (not the full agent-run history) to
-      // drive the "needs attention" banner below.
-      agentRuns: { where: { status: 'ACTION_REQUIRED' }, select: { id: true } },
     },
   })
 }
@@ -86,26 +85,6 @@ function TripCard({ trip }: { trip: TripWithRelations }) {
   )
 }
 
-// Only the first flagged trip is surfaced — matches dashboard.js's
-// renderAttentionBanner(), which uses Array.find rather than filtering
-// every flagged trip into a list.
-function AttentionBanner({ trips }: { trips: TripWithRelations[] }) {
-  const flagged = trips.find((t) => t.agentRuns.length > 0)
-  if (!flagged) return null
-
-  return (
-    <div className={styles.dAlert}>
-      <span className={styles.dAlertIcon} aria-hidden="true" />
-      <p className={styles.dAlertText}>
-        Maestro wants your attention for the trip &ldquo;{flagged.title}&rdquo;
-      </p>
-      <Link href={`/trips/${flagged.id}`} className={styles.takeLookBtn} data-tip="Open the trip to see what Maestro flagged">
-        Take a Look <ArrowRight size={12} strokeWidth={2} />
-      </Link>
-    </div>
-  )
-}
-
 function TripPanel({ trips, emptyIcon, emptyText }: { trips: TripWithRelations[]; emptyIcon: React.ReactNode; emptyText: string }) {
   if (trips.length === 0) {
     return (
@@ -125,10 +104,9 @@ function TripPanel({ trips, emptyIcon, emptyText }: { trips: TripWithRelations[]
 }
 
 export default async function DashboardPage() {
-  const session = await auth()
-  const userId = session!.user.id
+  const userId = await requirePageUserId()
 
-  const trips = await getTrips(userId)
+  const [trips, needsYou] = await Promise.all([getTrips(userId), loadNeedsYou(userId)])
   // Three sections mirror trip.status directly (set by lib/monitoring/service.ts):
   // ACTIVE = happening right now, UPCOMING = not started yet, COMPLETED/CANCELLED = done.
   const activeTrips = trips.filter((t) => t.status === 'ACTIVE')
@@ -150,7 +128,9 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <AttentionBanner trips={trips} />
+      {/* Every decision waiting on the passenger, answerable right here —
+          replaces a banner that only ever named the first flagged trip. */}
+      <NeedsYouInbox items={needsYou} />
 
       <div className={styles.dashSectionTitle}>Active Trips</div>
       <TripPanel

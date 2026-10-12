@@ -159,12 +159,26 @@ export async function classifyReply(input: ClassifyReplyInput): Promise<ReplyInt
 export function decideRunTransition(
   interpretation: ReplyInterpretation,
   hasRescheduleRequest: boolean,
-  segmentLabel: string
+  segmentLabel: string,
+  /**
+   * A counter-offer's proposed time, already formatted, when
+   * lib/agents/counterOffer.ts could read exactly one new time out of the
+   * reply. Lets the passenger accept it in one click — still only through
+   * the same explicit confirm as any reschedule, never automatically.
+   */
+  counterOfferTime: string | null = null
 ): { status: AgentRunStatus; summary: string } {
   if (interpretation.intent === 'ACCEPTED' && interpretation.confidence >= ACCEPT_CONFIDENCE_THRESHOLD && hasRescheduleRequest) {
     return {
       status: 'RESCHEDULING',
       summary: `${segmentLabel}'s provider's reply looks like a yes — read it and confirm to finish rescheduling.`,
+    }
+  }
+
+  if (interpretation.intent === 'COUNTER_OFFER' && hasRescheduleRequest && counterOfferTime) {
+    return {
+      status: 'RESCHEDULING',
+      summary: `${segmentLabel}'s provider offered ${counterOfferTime} instead — read their reply, and confirm if that works for you.`,
     }
   }
 

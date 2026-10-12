@@ -10,7 +10,15 @@ import { approveContactRequest } from '@/lib/agents/approveContact'
 // send-or-decline lives in lib/agents/approveContact.ts, shared with
 // nothing else yet (unlike confirm-reschedule, the voice assistant has no
 // path to this either — same read-only boundary).
-const ApproveSchema = z.object({ communicationId: z.string().min(1), approve: z.boolean() })
+// contactId / customEmail let the passenger send to a different address
+// than the one Contact Discovery picked (lib/agents/approveContact.ts
+// validates a contactId belongs to the same segment).
+const ApproveSchema = z.object({
+  communicationId: z.string().min(1),
+  approve: z.boolean(),
+  contactId: z.string().min(1).optional(),
+  customEmail: z.string().trim().toLowerCase().email('Enter a valid email address.').max(200).optional(),
+})
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireUserId()
@@ -31,7 +39,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 })
   }
 
-  const result = await approveContactRequest(id, parsed.data.communicationId, parsed.data.approve)
+  const { communicationId, approve, contactId, customEmail } = parsed.data
+  const result = await approveContactRequest(id, communicationId, approve, { contactId, customEmail })
+  if (result.status === 'invalid_contact') {
+    return NextResponse.json({ error: "That address isn't one on file for this booking — pick another or type one in." }, { status: 400 })
+  }
   if (result.status === 'not_found') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
